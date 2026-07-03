@@ -28,5 +28,9 @@ def test_get_settings_is_cached() -> None:
 
 
 def test_stub_command_exits_nonzero() -> None:
-    result = runner.invoke(app, ["understand"])
+    # build-kb is the Phase 5 stub; it exits 1 without touching the DB or any
+    # API. (understand is live as of Phase 3 and must not be invoked here —
+    # it would run real LLM calls against the dev database.)
+    result = runner.invoke(app, ["build-kb"])
     assert result.exit_code == 1
+    assert "Phase 5" in result.output

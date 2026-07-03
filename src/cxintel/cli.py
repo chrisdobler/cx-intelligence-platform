@@ -118,9 +118,25 @@ def stats() -> None:
 
 
 @app.command()
-def understand() -> None:
-    """Run LLM conversation understanding (Phase 3)."""
-    _not_implemented("understand")
+def understand(
+    full: bool = typer.Option(
+        False, "--full", help="Process the full dataset (default: sample of 100)."
+    ),
+) -> None:
+    """Run LLM conversation understanding (resumable; skips analyzed conversations)."""
+    from .pipeline.orchestrator import run_stage
+
+    try:
+        summary = run_stage(
+            "understand",
+            progress=typer.echo,
+            trigger="cli",
+            option="full" if full else "sample",
+        )
+    except Exception as exc:
+        typer.secho(f"understanding failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+    typer.secho(summary, fg=typer.colors.GREEN)
 
 
 @app.command()

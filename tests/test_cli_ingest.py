@@ -79,6 +79,7 @@ def test_pipeline_command_runs_remaining_and_stops_cleanly(
 ) -> None:
     path = write_dataset(tmp_path, [make_record()])
     monkeypatch.setenv("RAW_DATA_PATH", str(path))
+    monkeypatch.setenv("GOOGLE_API_KEY", "")  # understand blocked deterministically
     from cxintel.config import get_settings
 
     get_settings.cache_clear()
@@ -86,7 +87,7 @@ def test_pipeline_command_runs_remaining_and_stops_cleanly(
     result = runner.invoke(app, ["pipeline"])
     assert result.exit_code == 0, result.output
     assert "Data Ingestion" in result.output
-    assert "not yet implemented" in result.output  # stopped at understand
+    assert "blocked" in result.output  # stopped at understand (AI unconfigured)
 
 
 def test_runs_command_lists_cli_triggered_runs(
@@ -112,10 +113,46 @@ def test_runs_command_empty_history(settings_on_test_db: str, db_session: Any) -
     assert "No pipeline runs recorded yet." in result.output
 
 
-def test_understand_stub_reports_planned_phase() -> None:
+def test_understand_without_ai_key_fails_cleanly(
+    settings_on_test_db: str, monkeypatch: Any, db_session: Any
+) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", "")
+    from cxintel.config import get_settings
+
+    get_settings.cache_clear()
     result = runner.invoke(app, ["understand"])
     assert result.exit_code == 1
-    assert "Phase 3" in result.output
+    assert "GOOGLE_API_KEY" in result.output
+
+
+def test_understand_sample_and_full_flags(
+    tmp_path: Path, settings_on_test_db: str, monkeypatch: Any, db_session: Any
+) -> None:
+    path = write_dataset(tmp_path, [make_record("conv_0001"), make_record("conv_0002", "open")])
+    monkeypatch.setenv("RAW_DATA_PATH", str(path))
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    from cxintel.config import get_settings
+
+    get_settings.cache_clear()
+    assert runner.invoke(app, ["ingest"]).exit_code == 0
+
+    class CannedProvider:
+        def extract(self, prompt: str, schema: Any, on_retry: Any = None) -> Any:
+            from .test_understanding_schema import FROZEN_V1_EXAMPLE
+
+            return schema.model_validate(FROZEN_V1_EXAMPLE)
+
+    monkeypatch.setattr("cxintel.llm.get_llm_provider", lambda: CannedProvider())
+
+    sample = runner.invoke(app, ["understand"])
+    assert sample.exit_code == 0, sample.output
+    assert "Analyzed 2 conversations" in sample.output
+
+    # Everything already analyzed — a full run just skips.
+    full = runner.invoke(app, ["understand", "--full"])
+    assert full.exit_code == 0, full.output
+    assert "Analyzed 0 conversations" in full.output
+    assert "2 already analyzed" in full.output
 
 
 def test_status_reports_ingested_metrics(

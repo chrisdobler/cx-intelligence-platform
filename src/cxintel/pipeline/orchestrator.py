@@ -30,7 +30,9 @@ from .stages import (
     PipelineStage,
     Prerequisite,
     ResolutionAssistantStage,
+    RunOption,
     StageKind,
+    StageNotRunnableError,
     UnderstandStage,
 )
 
@@ -71,6 +73,7 @@ class StageStatus(BaseModel):
     outputs: list[str]
     last_run: LastRun | None
     open_url: str | None
+    run_options: list[RunOption]
 
 
 def get_stage(key: str) -> PipelineStage:
@@ -189,6 +192,7 @@ def _status(stage: PipelineStage, session: Session | None, last_run: LastRun | N
         outputs=list(stage.outputs),
         last_run=last_run,
         open_url=stage.open_url,
+        run_options=list(stage.run_options),
     )
 
 
@@ -263,19 +267,32 @@ def _noop_progress(_message: object) -> None:
     return None
 
 
+def validate_option(stage: PipelineStage, option: str | None) -> None:
+    """Reject a run option the stage does not declare."""
+    if option is None:
+        return
+    if option not in {o.value for o in stage.run_options}:
+        raise StageNotRunnableError(f"'{stage.label}' has no run option '{option}'.")
+
+
 def run_stage(
-    key: str, progress: ProgressCallback = _noop_progress, trigger: str = "api"
+    key: str,
+    progress: ProgressCallback = _noop_progress,
+    trigger: str = "api",
+    option: str | None = None,
 ) -> str:
     """Run one stage synchronously; returns its one-line summary.
 
-    The execution is recorded in the ``pipeline_runs`` audit trail with its
-    ``trigger`` source. Raises ``KeyError`` (unknown), ``StageNotRunnableError``
-    (unimplemented or interactive), ``PrerequisitesUnmetError``, or whatever
-    the stage itself raises.
+    ``option`` selects one of the stage's declared run options (None = the
+    stage default). The execution is recorded in the ``pipeline_runs`` audit
+    trail with its ``trigger`` source. Raises ``KeyError`` (unknown),
+    ``StageNotRunnableError`` (unimplemented, interactive, or unknown option),
+    ``PrerequisitesUnmetError``, or whatever the stage itself raises.
     """
     from ..db import get_session_factory
 
     stage = get_stage(key)
+    validate_option(stage, option)
     if not stage.implemented or stage.kind is not StageKind.BATCH:
         stage.run(get_session_factory(), progress)  # raises StageNotRunnableError
     session = _open_session()
@@ -292,7 +309,7 @@ def run_stage(
     started = time.monotonic()
     run_id = _record_start(key, trigger, started_at)
     try:
-        summary = stage.run(get_session_factory(), progress)
+        summary = stage.run(get_session_factory(), progress, option)
     except Exception as exc:
         _record_finish(run_id, key, trigger, started_at, time.monotonic() - started, error=str(exc))
         raise

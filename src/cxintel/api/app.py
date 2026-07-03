@@ -101,12 +101,23 @@ def pipeline_runs(limit: int = Query(default=20, ge=1, le=200)) -> list[RunRecor
 
 
 @app.post("/api/pipeline/{key}/run", status_code=202)
-def run_pipeline_stage(key: str) -> Job:
-    """Run one pipeline stage in the background (202 with the job snapshot)."""
+def run_pipeline_stage(key: str, option: str | None = Query(default=None)) -> Job:
+    """Run one pipeline stage in the background (202 with the job snapshot).
+
+    ``option`` selects one of the stage's declared run options (e.g. the
+    Understanding stage's ``sample`` vs ``full``); omitted = stage default.
+    """
+    from ..pipeline.stages import StageNotRunnableError
+
     try:
         stage = orchestrator.get_stage(key)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Unknown pipeline stage '{key}'.") from None
+
+    try:
+        orchestrator.validate_option(stage, option)
+    except StageNotRunnableError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if stage.kind is StageKind.INTERACTIVE:
         raise HTTPException(
@@ -124,7 +135,7 @@ def run_pipeline_stage(key: str) -> Job:
         raise HTTPException(status_code=422, detail=f"'{stage.label}' cannot run yet: {reasons}")
 
     try:
-        return TRACKER.start(key, lambda progress: run_stage(key, progress))
+        return TRACKER.start(key, lambda progress: run_stage(key, progress, "api", option))
     except JobBusyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

@@ -18,7 +18,15 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from .models import Anomaly, Conversation, ConversationAnalysis, Message, PipelineRun
+from .models import (
+    Anomaly,
+    Conversation,
+    ConversationAnalysis,
+    ConversationIssue,
+    IssueCatalogEntry,
+    Message,
+    PipelineRun,
+)
 
 
 class ConversationRepository:
@@ -69,6 +77,35 @@ class ConversationRepository:
             select(Conversation).where(Conversation.external_id == external_id)
         ).scalar_one_or_none()
 
+    def days(self) -> list[int]:
+        """Distinct dataset days in ascending order."""
+        return list(
+            self._session.execute(
+                select(Conversation.day).distinct().order_by(Conversation.day)
+            ).scalars()
+        )
+
+    def pending_analysis_ids_for_day(self, day: int, limit: int | None = None) -> list[uuid.UUID]:
+        """Conversations on a day that have no analysis yet (resumable runs)."""
+        stmt = (
+            select(Conversation.id)
+            .outerjoin(
+                ConversationAnalysis,
+                ConversationAnalysis.conversation_id == Conversation.id,
+            )
+            .where(Conversation.day == day)
+            .where(ConversationAnalysis.conversation_id.is_(None))
+            .order_by(Conversation.started_at, Conversation.id)
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return list(self._session.execute(stmt).scalars())
+
+    def count_for_day(self, day: int) -> int:
+        return self._session.execute(
+            select(func.count()).select_from(Conversation).where(Conversation.day == day)
+        ).scalar_one()
+
 
 class MessageRepository:
     """Persistence for :class:`Message` rows."""
@@ -96,6 +133,10 @@ class ConversationAnalysisRepository:
     def add(self, analysis: ConversationAnalysis) -> None:
         self._session.add(analysis)
 
+    def upsert(self, analysis: ConversationAnalysis) -> None:
+        """Insert or replace the analysis for a conversation (rerun = regenerate)."""
+        self._session.merge(analysis)
+
     def count(self) -> int:
         return self._session.execute(
             select(func.count()).select_from(ConversationAnalysis)
@@ -103,6 +144,99 @@ class ConversationAnalysisRepository:
 
     def get(self, conversation_id: uuid.UUID) -> ConversationAnalysis | None:
         return self._session.get(ConversationAnalysis, conversation_id)
+
+
+class IssueAggregate:
+    """Per-canonical-name Day-1 aggregation used to build the issue catalog."""
+
+    def __init__(self, canonical_name: str, example_count: int, examples: list[str]) -> None:
+        self.canonical_name = canonical_name
+        self.example_count = example_count
+        self.examples = examples
+
+
+class ConversationIssueRepository:
+    """Persistence for :class:`ConversationIssue` projections (derived data)."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def replace_for_conversation(
+        self, conversation_id: uuid.UUID, issues: Sequence[ConversationIssue]
+    ) -> None:
+        """Regenerate the projection for one conversation (delete + insert)."""
+        self._session.query(ConversationIssue).filter(
+            ConversationIssue.conversation_id == conversation_id
+        ).delete()
+        self._session.add_all(issues)
+
+    def count(self) -> int:
+        return self._session.execute(
+            select(func.count()).select_from(ConversationIssue)
+        ).scalar_one()
+
+    def unmatched_count(self) -> int:
+        """Candidate novel issues — extracted but absent from the catalog."""
+        return self._session.execute(
+            select(func.count())
+            .select_from(ConversationIssue)
+            .where(ConversationIssue.catalog_matched.is_(False))
+        ).scalar_one()
+
+    def canonical_names_for_day(self, day: int) -> list[str]:
+        """Distinct canonical names seen on one day (in-flight Day-1 normalization)."""
+        rows = self._session.execute(
+            select(ConversationIssue.canonical_name)
+            .join(Conversation, Conversation.id == ConversationIssue.conversation_id)
+            .where(Conversation.day == day)
+            .distinct()
+            .order_by(ConversationIssue.canonical_name)
+        ).scalars()
+        return list(rows)
+
+    def aggregate_for_day(self, day: int) -> list[IssueAggregate]:
+        """Group a day's issues by canonical name with example descriptions."""
+        rows = (
+            self._session.execute(
+                select(
+                    ConversationIssue.canonical_name,
+                    func.count(),
+                    func.array_agg(ConversationIssue.customer_description),
+                )
+                .join(Conversation, Conversation.id == ConversationIssue.conversation_id)
+                .where(Conversation.day == day)
+                .group_by(ConversationIssue.canonical_name)
+            )
+            .tuples()
+            .all()
+        )
+        return [
+            IssueAggregate(name, count, list(examples)) for name, count, examples in rows
+        ]
+
+
+class IssueCatalogRepository:
+    """Persistence for the derived :class:`IssueCatalogEntry` taxonomy."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def all(self) -> list[IssueCatalogEntry]:
+        return list(
+            self._session.execute(
+                select(IssueCatalogEntry).order_by(IssueCatalogEntry.canonical_name)
+            ).scalars()
+        )
+
+    def count(self) -> int:
+        return self._session.execute(
+            select(func.count()).select_from(IssueCatalogEntry)
+        ).scalar_one()
+
+    def replace_all(self, entries: Sequence[IssueCatalogEntry]) -> None:
+        """Regenerate the whole catalog (it is derived data)."""
+        self._session.query(IssueCatalogEntry).delete()
+        self._session.add_all(entries)
 
 
 class PipelineRunRepository:

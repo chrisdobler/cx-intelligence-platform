@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,22 @@ def _fresh_tracker(monkeypatch: pytest.MonkeyPatch) -> JobTracker:
     return tracker
 
 
+@pytest.fixture(autouse=True)
+def _unconfigured_ai(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Keep tests deterministic regardless of any real key in the host .env.
+
+    An empty env var overrides the .env file, and ai_configured treats it as
+    unset — so the understand stage is blocked unless a test injects a fake
+    provider explicitly.
+    """
+    from cxintel.config import get_settings
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 def test_status_includes_stage_cards_and_job() -> None:
     payload = client.get("/api/status").json()
     assert "job" in payload
@@ -37,8 +54,9 @@ def test_status_includes_stage_cards_and_job() -> None:
         assert isinstance(stage["prerequisites"], list)
         assert stage["action"] in {"run", "run_again", "open", "none"}
     understand = next(s for s in stages if s["key"] == "understand")
-    assert understand["implemented"] is False
-    assert understand["planned_phase"] == "Phase 3"
+    assert understand["implemented"] is True
+    assert understand["planned_phase"] is None
+    assert [o["value"] for o in understand["run_options"]] == ["sample", "full"]
     chat = next(s for s in stages if s["key"] == "resolution_assistant")
     assert chat["action"] == "open"
 
@@ -48,9 +66,21 @@ def test_run_unknown_stage_returns_404() -> None:
 
 
 def test_run_unimplemented_stage_returns_422() -> None:
+    response = client.post("/api/pipeline/knowledge_base/run")
+    assert response.status_code == 422
+    assert "Phase 5" in response.json()["detail"]
+
+
+def test_run_understand_blocked_without_ai_key() -> None:
     response = client.post("/api/pipeline/understand/run")
     assert response.status_code == 422
-    assert "Phase 3" in response.json()["detail"]
+    assert "GOOGLE_API_KEY" in response.json()["detail"]
+
+
+def test_run_with_unknown_option_returns_422() -> None:
+    response = client.post("/api/pipeline/understand/run?option=bogus")
+    assert response.status_code == 422
+    assert "option" in response.json()["detail"].lower()
 
 
 def test_run_interactive_stage_returns_422() -> None:
@@ -123,9 +153,52 @@ def test_run_remaining_end_to_end(
     job = client.get("/api/status").json()["job"]
     assert job["state"] == "succeeded"
     assert job["target"] == "pipeline"
-    # Ran ingest, then stopped cleanly at the unimplemented understand stage.
+    # Ran ingest, then stopped cleanly at understand (blocked: AI unconfigured here).
     assert "Data Ingestion" in job["message"]
-    assert "not yet implemented" in job["message"]
+    assert "blocked" in job["message"]
+
+
+class _CannedProvider:
+    """Returns the frozen V1 example for any prompt."""
+
+    def extract(self, prompt: str, schema: Any, on_retry: Any = None) -> Any:
+        from .test_understanding_schema import FROZEN_V1_EXAMPLE
+
+        return schema.model_validate(FROZEN_V1_EXAMPLE)
+
+
+def test_run_understand_sample_end_to_end(
+    tmp_path: Path,
+    settings_on_test_db: str,
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: Any,
+) -> None:
+    dataset = tmp_path / "tickets.json"
+    dataset.write_text(json.dumps([make_record()]), encoding="utf-8")
+    monkeypatch.setenv("RAW_DATA_PATH", str(dataset))
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")  # prerequisites met
+    monkeypatch.chdir(Path(__file__).resolve().parent.parent)
+    monkeypatch.setattr("cxintel.llm.get_llm_provider", lambda: _CannedProvider())
+    from cxintel.config import get_settings
+
+    get_settings.cache_clear()
+
+    assert client.post("/api/pipeline/ingest/run").status_code == 202
+    response = client.post("/api/pipeline/understand/run?option=sample")
+    assert response.status_code == 202, response.text
+
+    payload = client.get("/api/status").json()
+    assert payload["job"]["state"] == "succeeded"
+    assert "Analyzed 1 conversations" in payload["job"]["message"]
+    progress = payload["job"]["progress_detail"]
+    assert progress["stage_key"] == "understand"
+    assert progress["total_work"] == 1
+    assert progress["completed_work"] == 1
+    assert progress["percentage"] == 100
+    assert progress["failure_count"] == 0
+    understand = next(s for s in payload["pipeline"] if s["key"] == "understand")
+    assert understand["complete"] is True  # 1 of 1 analyzed
+    assert payload["metrics"]["processed_conversations"] == 1
 
 
 def test_runs_endpoint_empty(settings_on_test_db: str, db_session: Any) -> None:

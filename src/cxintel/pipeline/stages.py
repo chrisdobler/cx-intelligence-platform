@@ -41,6 +41,17 @@ class Prerequisite(BaseModel):
     detail: str | None = None
 
 
+class RunOption(BaseModel):
+    """One explicit way to run a stage (e.g. sample vs full dataset).
+
+    The first option is the stage's default — used by Run Remaining and by
+    runs that specify no option. Stages without options run one way only.
+    """
+
+    value: str
+    label: str
+
+
 class StageNotRunnableError(Exception):
     """Raised when run() is invoked on an unimplemented or interactive stage."""
 
@@ -56,6 +67,7 @@ class PipelineStage(ABC):
     implemented: bool = False
     planned_phase: str | None = None
     open_url: str | None = None
+    run_options: tuple[RunOption, ...] = ()
 
     @abstractmethod
     def is_complete(self, session: Session | None) -> bool:
@@ -69,8 +81,14 @@ class PipelineStage(ABC):
         self,
         session_factory: sessionmaker[Session],
         progress: ProgressCallback,
+        option: str | None = None,
     ) -> str:
-        """Execute the stage; returns a one-line human summary."""
+        """Execute the stage; returns a one-line human summary.
+
+        ``option`` selects one of ``run_options`` for stages that expose
+        explicit run modes; stages without options ignore it (the orchestrator
+        validates it before calling).
+        """
         if self.kind is StageKind.INTERACTIVE:
             raise StageNotRunnableError(f"'{self.label}' is interactive — open it instead.")
         raise StageNotRunnableError(
@@ -163,6 +181,7 @@ class IngestStage(PipelineStage):
         self,
         session_factory: sessionmaker[Session],
         progress: ProgressCallback,
+        option: str | None = None,
     ) -> str:
         from alembic import command
         from alembic.config import Config
@@ -193,19 +212,29 @@ class IngestStage(PipelineStage):
 
 
 class UnderstandStage(PipelineStage):
-    """Phase 3 — LLM extraction of structured conversation objects."""
+    """Phase 3 — LLM extraction of the canonical Structured Conversation Object."""
 
     key = "understand"
     label = "Conversation Understanding"
     description = (
-        "LLM extraction of summary, issues, severity, products, and resolution "
-        "for every conversation, persisted as structured JSON."
+        "Gemini extracts the canonical Structured Conversation Object (summary, "
+        "issues, resolution) for every conversation, projects issues relationally, "
+        "and derives the Day-1 issue catalog. Resumable — reruns skip analyzed "
+        "conversations."
     )
-    outputs = ("conversation analyses",)
-    planned_phase = "Phase 3"
+    outputs = ("conversation analyses", "conversation issues", "issue catalog")
+    implemented = True
+    run_options = (
+        RunOption(value="sample", label="Run Sample (100)"),
+        RunOption(value="full", label="Run Full Dataset"),
+    )
 
     def is_complete(self, session: Session | None) -> bool:
-        return bool(_count_or_none(session, _analysis_count))
+        analyses = _count_or_none(session, _analysis_count)
+        conversations = _count_or_none(session, _conversation_count)
+        if not analyses or not conversations:
+            return False
+        return analyses >= conversations
 
     def prerequisites(self, session: Session | None) -> list[Prerequisite]:
         ingested = bool(_count_or_none(session, _conversation_count))
@@ -217,6 +246,37 @@ class UnderstandStage(PipelineStage):
             ),
             _ai_prerequisite(),
         ]
+
+    def run(
+        self,
+        session_factory: sessionmaker[Session],
+        progress: ProgressCallback,
+        option: str | None = None,
+    ) -> str:
+        from alembic import command
+        from alembic.config import Config
+
+        from ..config import get_settings
+        from ..llm import get_llm_provider
+        from ..understanding.service import UnderstandingService
+
+        settings = get_settings()
+        limit = settings.understand_sample_size if option in (None, "sample") else None
+        if settings.understand_limit is not None:
+            limit = settings.understand_limit  # explicit env override wins
+
+        reporter = ProgressReporter(
+            stage_key=self.key,
+            stage_label=self.label,
+            progress=progress,
+            message="Applying database migrations…",
+        )
+        command.upgrade(Config("alembic.ini"), "head")
+
+        scope = "full dataset" if limit is None else f"sample of {limit}"
+        reporter.report(message=f"Running conversation understanding ({scope})…")
+        service = UnderstandingService(session_factory, get_llm_provider())
+        return service.run(limit=limit, progress=reporter).summary()
 
 
 class KnowledgeBaseStage(PipelineStage):

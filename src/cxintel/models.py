@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -84,6 +84,51 @@ class ConversationAnalysis(Base):
     prompt_version: Mapped[str] = mapped_column(String)
     processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     analysis_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+
+
+class ConversationIssue(Base):
+    """Relational projection of one Issue from the Structured Conversation Object.
+
+    Derived data: regenerated 1:1 from ``ConversationAnalysis.analysis_json``
+    whenever understanding reruns — never edited manually, never the source of
+    truth. Exists so anomaly detection, analytics, and reporting query SQL
+    instead of repeatedly parsing JSONB (ADR-006/007).
+    """
+
+    __tablename__ = "conversation_issues"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"), index=True)
+    canonical_name: Mapped[str] = mapped_column(String, index=True)
+    customer_description: Mapped[str] = mapped_column(Text)
+    severity: Mapped[str] = mapped_column(String)
+    confidence: Mapped[float] = mapped_column(Float)
+    customer_impact: Mapped[str] = mapped_column(String)
+    product: Mapped[str] = mapped_column(String)
+    symptoms: Mapped[list[str]] = mapped_column(JSONB)
+    catalog_matched: Mapped[bool] = mapped_column(Boolean, index=True)
+    catalog_confidence: Mapped[float] = mapped_column(Float)
+    resolution_status: Mapped[str] = mapped_column(String)
+    resolution_summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class IssueCatalogEntry(Base):
+    """One category in the platform's issue taxonomy, derived from Day 1 only.
+
+    The catalog is regenerable derived data (ADR-011) — never manually
+    maintained. Day 2/3 issues that match no entry stay out of the catalog and
+    surface as candidate novel issues (``ConversationIssue.catalog_matched``).
+    """
+
+    __tablename__ = "issue_catalog"
+
+    canonical_name: Mapped[str] = mapped_column(String, primary_key=True)
+    description: Mapped[str] = mapped_column(Text)
+    first_seen_day: Mapped[int] = mapped_column(Integer)
+    example_count: Mapped[int] = mapped_column(Integer)
+    representative_examples: Mapped[list[str]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class PipelineRun(Base):

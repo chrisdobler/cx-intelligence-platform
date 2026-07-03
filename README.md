@@ -7,12 +7,14 @@ retrieval-augmented generation (RAG).
 - **Design:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - **Plan / status:** [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
 
-> **Status: Phase 2 (Data Ingestion) complete, with pipeline orchestration.**
-> The dataset can be ingested idempotently, and every pipeline stage is
-> exposed as an independent job runnable from the landing page, the CLI, or
-> the REST API. The AI stages (understanding, anomaly detection, knowledge
-> base, resolution assistant) land in Phases 3–6. See the plan for the
-> phase roadmap.
+> **Status: Phase 3 (Conversation Understanding) complete.**
+> The dataset ingests idempotently, and Gemini extracts the canonical
+> Structured Conversation Object for every conversation — persisted to
+> `ConversationAnalysis`, projected into `ConversationIssue` rows, with the
+> issue catalog derived from the Day-1 baseline. Every pipeline stage is an
+> independent job runnable from the landing page, the CLI, or the REST API.
+> The remaining AI stages (anomaly detection, knowledge base, resolution
+> assistant) land in Phases 4–6. See the plan for the phase roadmap.
 
 ## Prerequisites
 
@@ -61,7 +63,13 @@ not just observed:
   showing its status, prerequisites, outputs, and last execution, with a
   **Run** / **Run Again** / **Open** action. Stages whose prerequisites are
   unmet are disabled and explain why; stages from future phases are disabled
-  with their planned phase.
+  with their planned phase. Conversation Understanding exposes two explicit
+  actions — **Run Sample (100)** for development and prompt iteration, and
+  **Run Full Dataset** (~10k LLM calls, resumable) — so a full run is always
+  a deliberate choice. On a free-tier Gemini key, set
+  `UNDERSTAND_CONCURRENCY=1` and expect rate-limited pacing (the provider
+  honours the server's suggested retry delay); a full run realistically needs
+  a paid tier.
 - **Run Remaining Pipeline** — one click executes every incomplete stage in
   dependency order, skipping completed stages (completion is derived from the
   data, so nothing reruns unnecessarily) and stopping cleanly at the first
@@ -110,11 +118,12 @@ src/cxintel/
   api/app.py         # FastAPI app (landing page + /health, /api/status, /api/config)
   api/status.py      # typed platform-status model (backs the control center)
   api/static/        # control-center landing page
-  ingestion/         # Phase 2  (placeholder)
-  understanding/     # Phase 3  (placeholder)
-  resolution_assistant/ # Phase 6 (placeholder)
-  knowledge_base/    # Phase 5  (placeholder)
+  ingestion/         # Phase 2  — dataset loading + idempotent import
+  llm.py             # provider abstraction (Google AI Studio, native structured output)
+  understanding/     # Phase 3  — StructuredConversation schema, Prompt #1, service
   anomaly/           # Phase 4  (placeholder)
+  knowledge_base/    # Phase 5  (placeholder)
+  resolution_assistant/ # Phase 6 (placeholder)
 tests/               # foundation + API smoke tests
 docker/Dockerfile    # pgvector image + baked-in init scripts
 docker/initdb/       # pgvector init script (runs on DB first boot)
@@ -140,7 +149,8 @@ data/raw/            # place sample_tickets_v6.json here (git-ignored)
 | `serve` | Run the FastAPI service |
 | `clean` | Remove caches and build artifacts |
 | `ingest` / `stats` / `pipeline` | Import the dataset / show ingestion stats / run remaining stages |
-| `understand` / `analyze` / `build-kb` / `chat` | Stage passthroughs (stubs until Phases 3–6) |
+| `understand` | Run conversation understanding on a sample of 100 (see `app understand --full`) |
+| `analyze` / `build-kb` / `chat` | Stage passthroughs (stubs until Phases 4–6) |
 
 ## CLI (`app`)
 
@@ -150,11 +160,13 @@ app version
 app db health | app db upgrade
 app serve
 app ingest         # import the dataset (idempotent; applies migrations first)
+app understand     # conversation understanding — sample of 100 (resumable)
+app understand --full  # process every remaining conversation (~10k LLM calls)
 app stats          # ingestion statistics — verifies the import
 app pipeline       # run every incomplete pipeline stage in dependency order
 app runs           # pipeline audit trail — recent stage runs, newest first
 # Stubs until their phase:
-app understand | app analyze | app build-kb | app chat
+app analyze | app build-kb | app chat
 ```
 
 ## Configuration

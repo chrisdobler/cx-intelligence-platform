@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     understand_limit: int | None = Field(
         default=None, description="Cap conversations processed by `understand` (None = all)."
     )
+    understand_sample_size: int = Field(
+        default=100, description="Conversations processed by the 'Run Sample' action."
+    )
+    understand_concurrency: int = Field(
+        default=8, description="Worker threads for conversation understanding (per day)."
+    )
     batch_size: int = Field(default=100)
 
     # --- Runtime ----------------------------------------------------------
@@ -64,7 +70,8 @@ class Settings(BaseSettings):
     def ai_configured(self) -> bool:
         """Whether the active LLM provider has the credentials it needs."""
         if self.llm_provider == "google":
-            return self.google_api_key is not None
+            # Truthiness (not just "is set"): an empty env var means unconfigured.
+            return bool(self.google_api_key)
         return False  # other providers add their own key check when introduced
 
 

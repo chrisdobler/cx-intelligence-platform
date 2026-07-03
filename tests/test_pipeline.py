@@ -55,7 +55,7 @@ class FakeStage(PipelineStage):
     def prerequisites(self, session: Session | None) -> list[Prerequisite]:
         return [Prerequisite(label="ready", met=self._prereqs_met, detail=None)]
 
-    def run(self, session_factory: Any, progress: Any) -> str:
+    def run(self, session_factory: Any, progress: Any, option: str | None = None) -> str:
         if not self.implemented or self.kind is StageKind.INTERACTIVE:
             raise StageNotRunnableError(f"{self.key} is not runnable")
         self.run_calls += 1
@@ -104,14 +104,27 @@ def test_real_registry_has_five_stages_in_order() -> None:
     ]
     by_key = {s.key: s for s in statuses}
     assert by_key["ingest"].implemented is True
-    assert by_key["understand"].implemented is False
-    assert by_key["understand"].planned_phase == "Phase 3"
+    assert by_key["understand"].implemented is True  # Phase 3 delivered
+    assert by_key["understand"].planned_phase is None
+    assert by_key["knowledge_base"].implemented is False
     assert by_key["resolution_assistant"].kind == StageKind.INTERACTIVE
+    # Understanding exposes the two explicit run options (sample is default).
+    understand_options = [(o.value, o.label) for o in by_key["understand"].run_options]
+    assert understand_options == [
+        ("sample", "Run Sample (100)"),
+        ("full", "Run Full Dataset"),
+    ]
     # Every stage carries card data.
     for s in statuses:
         assert s.description
         assert s.prerequisites
         assert s.outputs
+
+
+def test_run_stage_rejects_unknown_option(monkeypatch: pytest.MonkeyPatch) -> None:
+    use_stages(monkeypatch, FakeStage("a"))
+    with pytest.raises(StageNotRunnableError):
+        run_stage("a", option="bogus")
 
 
 def test_statuses_report_runnable(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -80,7 +80,7 @@ def db_session(migrated_engine: Engine) -> Iterator[Session]:
         conn.execute(
             text(
                 "truncate conversations, messages, conversation_analyses,"
-                " anomalies, pipeline_runs cascade"
+                " conversation_issues, issue_catalog, anomalies, pipeline_runs cascade"
             )
         )
         conn.commit()

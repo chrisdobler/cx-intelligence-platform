@@ -21,7 +21,7 @@ from ..config import get_settings
 from ..db import check_health
 from ..pipeline.jobs import TRACKER, Job
 from ..pipeline.orchestrator import LastRun, StageStatus, stage_statuses
-from ..pipeline.stages import Prerequisite, StageKind
+from ..pipeline.stages import Prerequisite, RunOption, StageKind
 
 AI_SETUP_URL = "https://aistudio.google.com/apikey"
 
@@ -66,6 +66,7 @@ class PipelineStage(BaseModel):
     last_run: LastRun | None
     open_url: str | None
     action: str  # "run" | "run_again" | "open" | "none"
+    run_options: list[RunOption] = Field(default_factory=list)
 
 
 class Metrics(BaseModel):
@@ -103,11 +104,14 @@ def _ingest_metrics() -> Metrics:
     endpoint keeps working when the database is down or not yet migrated.
     """
     from ..db import get_session_factory
-    from ..repositories import ConversationRepository
+    from ..repositories import ConversationAnalysisRepository, ConversationRepository
 
     try:
         with get_session_factory()() as session:
-            return Metrics(imported_conversations=ConversationRepository(session).count())
+            return Metrics(
+                imported_conversations=ConversationRepository(session).count(),
+                processed_conversations=ConversationAnalysisRepository(session).count(),
+            )
     except Exception:
         return Metrics()
 
@@ -139,6 +143,7 @@ def _pipeline_stages() -> list[PipelineStage]:
             last_run=s.last_run,
             open_url=s.open_url,
             action=_stage_action(s),
+            run_options=s.run_options,
         )
         for s in stage_statuses()
     ]

@@ -8,9 +8,11 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from cxintel.models import PipelineRun
+from cxintel.models import ConversationIssue, IssueCatalogEntry, PipelineRun
 from cxintel.repositories import (
+    ConversationIssueRepository,
     ConversationRepository,
+    IssueCatalogRepository,
     MessageRepository,
     PipelineRunRepository,
 )
@@ -182,3 +184,109 @@ def test_recent_orders_newest_first_and_limits(db_session: Session) -> None:
     assert len(recent) == 3
     assert [r.id for r in recent] == [runs[4].id, runs[3].id, runs[2].id]
     assert repo.recent(limit=50)[-1].id == runs[0].id
+
+
+def make_issue(
+    conversation_id: uuid.UUID,
+    canonical_name: str = "base water leak",
+    *,
+    matched: bool = True,
+) -> ConversationIssue:
+    return ConversationIssue(
+        id=uuid.uuid4(),
+        conversation_id=conversation_id,
+        canonical_name=canonical_name,
+        customer_description="water pooling under the pod",
+        severity="high",
+        confidence=0.95,
+        customer_impact="high",
+        product="Pod 5",
+        symptoms=["water pooling"],
+        catalog_matched=matched,
+        catalog_confidence=0.9,
+        resolution_status="resolved",
+        resolution_summary="replaced",
+        created_at=datetime(2026, 7, 3, tzinfo=UTC),
+    )
+
+
+def seeded_conversation(db_session: Session, external_id: str, day: int = 1) -> uuid.UUID:
+    ConversationRepository(db_session).bulk_insert_ignore_conflicts(
+        [conversation_row(external_id, day=day)]
+    )
+    return uuid.uuid5(uuid.NAMESPACE_URL, external_id)
+
+
+def test_issue_replace_for_conversation_regenerates(db_session: Session) -> None:
+    conv_id = seeded_conversation(db_session, "conv_a")
+    repo = ConversationIssueRepository(db_session)
+    repo.replace_for_conversation(conv_id, [make_issue(conv_id, "old issue")])
+    db_session.commit()
+    assert repo.count() == 1
+
+    repo.replace_for_conversation(
+        conv_id, [make_issue(conv_id, "new issue"), make_issue(conv_id, "second issue")]
+    )
+    db_session.commit()
+    names = {i.canonical_name for i in db_session.query(ConversationIssue).all()}
+    assert names == {"new issue", "second issue"}
+
+
+def test_issue_canonical_names_for_day(db_session: Session) -> None:
+    conv1 = seeded_conversation(db_session, "conv_a", day=1)
+    conv2 = seeded_conversation(db_session, "conv_b", day=2)
+    repo = ConversationIssueRepository(db_session)
+    repo.replace_for_conversation(conv1, [make_issue(conv1, "leak"), make_issue(conv1, "noise")])
+    repo.replace_for_conversation(conv2, [make_issue(conv2, "day2 only")])
+    db_session.commit()
+    assert repo.canonical_names_for_day(1) == ["leak", "noise"]
+
+
+def test_issue_day_aggregation(db_session: Session) -> None:
+    conv1 = seeded_conversation(db_session, "conv_a", day=1)
+    conv2 = seeded_conversation(db_session, "conv_b", day=1)
+    conv3 = seeded_conversation(db_session, "conv_c", day=2)
+    repo = ConversationIssueRepository(db_session)
+    repo.replace_for_conversation(conv1, [make_issue(conv1, "leak")])
+    repo.replace_for_conversation(conv2, [make_issue(conv2, "leak"), make_issue(conv2, "noise")])
+    repo.replace_for_conversation(conv3, [make_issue(conv3, "leak")])  # day 2 — excluded
+    db_session.commit()
+
+    agg = repo.aggregate_for_day(1)
+    assert {(a.canonical_name, a.example_count) for a in agg} == {("leak", 2), ("noise", 1)}
+    leak = next(a for a in agg if a.canonical_name == "leak")
+    assert "water pooling under the pod" in leak.examples
+
+
+def test_issue_unmatched_count(db_session: Session) -> None:
+    conv = seeded_conversation(db_session, "conv_a", day=2)
+    repo = ConversationIssueRepository(db_session)
+    repo.replace_for_conversation(
+        conv, [make_issue(conv, "known", matched=True), make_issue(conv, "novel", matched=False)]
+    )
+    db_session.commit()
+    assert repo.unmatched_count() == 1
+
+
+def test_issue_catalog_replace_all_and_all(db_session: Session) -> None:
+    repo = IssueCatalogRepository(db_session)
+    assert repo.all() == []
+    entries = [
+        IssueCatalogEntry(
+            canonical_name="leak",
+            description="water pooling under the pod",
+            first_seen_day=1,
+            example_count=12,
+            representative_examples=["water pooling under the pod"],
+            created_at=datetime(2026, 7, 3, tzinfo=UTC),
+        )
+    ]
+    repo.replace_all(entries)
+    db_session.commit()
+    assert [e.canonical_name for e in repo.all()] == ["leak"]
+    assert repo.count() == 1
+
+    # Regenerable: replace_all wipes and rebuilds.
+    repo.replace_all([])
+    db_session.commit()
+    assert repo.count() == 0
