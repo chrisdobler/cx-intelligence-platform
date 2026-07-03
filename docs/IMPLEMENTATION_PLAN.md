@@ -192,7 +192,7 @@ respecting the complexity budget):
 
 - **Service Status** — green/yellow/red for PostgreSQL, pgvector, API.
 - **Stage cards** — one card per pipeline stage (Data Ingestion, Conversation
-  Understanding, Knowledge Base, Anomaly Detection, Resolution Assistant),
+  Understanding, Anomaly Detection, Knowledge Base, Resolution Assistant),
   each showing: name, short description, status, prerequisites (with
   explanations when unmet), outputs produced, last execution time, and a
   primary action button (Run / Run Again / Open).

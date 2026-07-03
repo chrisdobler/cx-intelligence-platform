@@ -10,8 +10,8 @@ retrieval-augmented generation (RAG).
 > **Status: Phase 2 (Data Ingestion) complete, with pipeline orchestration.**
 > The dataset can be ingested idempotently, and every pipeline stage is
 > exposed as an independent job runnable from the landing page, the CLI, or
-> the REST API. The AI stages (understanding, knowledge base, anomaly
-> detection, resolution assistant) land in Phases 3–6. See the plan for the
+> the REST API. The AI stages (understanding, anomaly detection, knowledge
+> base, resolution assistant) land in Phases 3–6. See the plan for the
 > phase roadmap.
 
 ## Prerequisites
@@ -57,7 +57,7 @@ not just observed:
 
 - **Service Status** — green/yellow/red health for PostgreSQL, pgvector, and the API.
 - **Pipeline stage cards** — one card per stage (Data Ingestion, Conversation
-  Understanding, Knowledge Base, Anomaly Detection, Resolution Assistant)
+  Understanding, Anomaly Detection, Knowledge Base, Resolution Assistant)
   showing its status, prerequisites, outputs, and last execution, with a
   **Run** / **Run Again** / **Open** action. Stages whose prerequisites are
   unmet are disabled and explain why; stages from future phases are disabled

@@ -37,8 +37,8 @@ from .stages import (
 STAGES: tuple[PipelineStage, ...] = (
     IngestStage(),
     UnderstandStage(),
-    KnowledgeBaseStage(),
     AnomalyStage(),
+    KnowledgeBaseStage(),
     ResolutionAssistantStage(),
 )
 

@@ -4,7 +4,7 @@ Each processing stage is an independently executable job that reports its
 completion state and prerequisites, and (for batch stages) can be run through
 the orchestrator. Stage classes here stay thin: the heavy business logic lives
 in each phase's own package (:mod:`cxintel.ingestion` today; understanding,
-knowledge base, anomaly detection, and the resolution assistant as their
+anomaly detection, knowledge base, and the resolution assistant as their
 phases land). A stage that is not yet implemented says so via ``implemented``
 / ``planned_phase`` rather than pretending to run.
 

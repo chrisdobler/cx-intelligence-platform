@@ -98,8 +98,8 @@ def test_real_registry_has_five_stages_in_order() -> None:
     assert [s.key for s in statuses] == [
         "ingest",
         "understand",
-        "knowledge_base",
         "anomaly",
+        "knowledge_base",
         "resolution_assistant",
     ]
     by_key = {s.key: s for s in statuses}
