@@ -73,8 +73,9 @@ def api_config() -> dict[str, object]:
     return {
         "version": __version__,
         "database_url": _mask_database_url(s.database_url),
+        "llm_provider": s.llm_provider,
         "llm_model": s.llm_model,
-        "anthropic_api_key_set": s.anthropic_api_key is not None,
+        "google_api_key_set": s.google_api_key is not None,
         "embedding_provider": s.embedding_provider,
         "embedding_model": s.embedding_model,
         "embedding_dim": s.embedding_dim,

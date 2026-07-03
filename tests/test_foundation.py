@@ -18,7 +18,8 @@ def test_version_command() -> None:
 
 
 def test_settings_defaults() -> None:
-    assert Settings.model_fields["llm_model"].default == "claude-opus-4-8"
+    assert Settings.model_fields["llm_provider"].default == "google"
+    assert Settings.model_fields["llm_model"].default == "gemini-2.5-flash"
     assert str(Settings.model_fields["database_url"].default).startswith("postgresql")
 
 

@@ -52,6 +52,22 @@
     .service .name { font-weight: 600; }
     .service .detail { color: var(--muted); font-size: 13px; }
 
+    /* AI capabilities */
+    .ai-ok { display: flex; align-items: center; gap: 10px; }
+    .ai-ok .name { font-weight: 600; }
+    .ai-ok .detail { color: var(--muted); font-size: 13px; }
+    .ai-setup { display: flex; gap: 12px; align-items: flex-start; }
+    .ai-setup .dot { margin-top: 5px; }
+    .ai-setup h3 { margin: 0 0 6px; font-size: 15px; }
+    .ai-setup ol { margin: 6px 0 10px; padding-left: 20px; }
+    .ai-setup li { margin: 4px 0; }
+    .ai-setup code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+      background: #eef1f5; padding: 1px 5px; border-radius: 4px;
+    }
+    .ai-setup a { color: var(--accent); font-weight: 600; }
+    .ai-setup .note { color: var(--muted); font-size: 13px; margin: 0; }
+
     /* Pipeline */
     .stage { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
     .stage .mark { width: 20px; text-align: center; font-size: 15px; }
@@ -104,6 +120,13 @@
         <div id="services" class="grid cols-3">
           <div class="service"><span class="dot"></span><span class="detail">Loading…</span></div>
         </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>AI Capabilities</h2>
+      <div class="card" id="ai-card">
+        <div class="service"><span class="dot"></span><span class="detail">Loading…</span></div>
       </div>
     </section>
 
@@ -184,6 +207,32 @@
       el.innerHTML = items.join("");
     }
 
+    function renderAI(ai) {
+      const el = document.getElementById("ai-card");
+      if (ai.configured) {
+        el.innerHTML = `<div class="ai-ok">
+          <span class="dot ok"></span>
+          <span><span class="name">AI capabilities enabled</span>
+          <span class="detail"> · ${ai.provider} · ${ai.model}</span></span>
+        </div>`;
+      } else {
+        el.innerHTML = `<div class="ai-setup">
+          <span class="dot degraded"></span>
+          <div>
+            <h3>Enable AI capabilities</h3>
+            <p class="note">The database, Adminer, API, and docs work without this —
+            only AI generation is disabled until a key is configured.</p>
+            <ol>
+              <li>Get a free key from
+                <a href="${ai.setup_url}" target="_blank" rel="noopener">Google AI Studio</a>.</li>
+              <li>Add <code>GOOGLE_API_KEY=your-key</code> to your <code>.env</code> file.</li>
+              <li>Restart: <code>make stop &amp;&amp; make start</code>.</li>
+            </ol>
+          </div>
+        </div>`;
+      }
+    }
+
     function renderPipeline(stages) {
       document.getElementById("pipeline").innerHTML = stages.map((st) => {
         const done = st.state === "done";
@@ -211,6 +260,7 @@
         const res = await fetch("/api/status");
         const data = await res.json();
         renderServices(data.services, true);
+        renderAI(data.ai);
         renderPipeline(data.pipeline);
         renderMetrics(data.metrics);
       } catch (e) {

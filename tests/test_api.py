@@ -28,13 +28,16 @@ def test_status_endpoint_shape() -> None:
     response = client.get("/api/status")
     assert response.status_code == 200
     payload = response.json()
-    assert {"services", "pipeline", "metrics"} <= payload.keys()
+    assert {"services", "ai", "pipeline", "metrics"} <= payload.keys()
     assert len(payload["pipeline"]) == 5
     assert {m.get("name") for m in payload["services"]} == {
         "PostgreSQL",
         "pgvector",
         "FastAPI API",
     }
+    # No key configured in the test environment.
+    assert payload["ai"]["configured"] is False
+    assert payload["ai"]["provider"] == "google"
 
 
 def test_config_endpoint_hides_secrets() -> None:
@@ -43,9 +46,9 @@ def test_config_endpoint_hides_secrets() -> None:
     assert response.status_code == 200
     payload = response.json()
     # Secret values must never appear; only booleans reporting whether set.
-    assert "anthropic_api_key" not in payload
+    assert "google_api_key" not in payload
     assert "slack_webhook_url" not in payload
-    assert payload["anthropic_api_key_set"] is False
+    assert payload["google_api_key_set"] is False
     # The DB password is masked in the displayed URL.
     assert "***" in payload["database_url"]
     assert ":cx@" not in payload["database_url"]

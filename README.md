@@ -27,9 +27,12 @@ make start         # start the database + Adminer, then serve the app
 make stop          # stop the containers (Ctrl-C stops the API first)
 ```
 
+
 `make start` brings up PostgreSQL + pgvector (waiting until healthy) and the
 Adminer database UI, then serves the API in the foreground and prints the URLs.
 Everything is discoverable from the landing page — no further docs required.
+
+If Google AI Studio has not yet been configured, the landing page will detect the missing `GOOGLE_API_KEY` and guide you through obtaining a free API key. The database, Adminer, API, and documentation remain fully usable without the key; only AI-powered capabilities are disabled until it is configured.
 
 Optional: copy `.env.example` to `.env` to override any setting.
 
@@ -37,6 +40,9 @@ Optional: copy `.env.example` to `.env` to override any setting.
 > 8080 by default. Override either: `DB_HOST_PORT=5433 ADMINER_HOST_PORT=8081
 > make start` (and set `DATABASE_URL=postgresql+psycopg://cx:cx@localhost:5433/cx`
 > in `.env` if you moved the DB port).
+>
+> Adminer auto-logs into the local dev database. Set `ADMINER_AUTOLOGIN=0` in
+> `.env` if you want the normal login form instead.
 
 ## Control center
 
@@ -57,7 +63,7 @@ Endpoints:
 | `/health` | Machine health probe (JSON) |
 | `/api/status` | Service + pipeline status (backs the landing page) |
 | `/api/config` | Non-secret configuration (secrets reported only as set/unset) |
-| `http://localhost:8080` | Adminer database UI (server `db`, user/pass/db all `cx`) |
+| `http://localhost:8080` | Adminer database UI (auto-login to dev database `cx`) |
 
 ### Lower-level targets
 
@@ -119,5 +125,4 @@ app ingest | app understand | app analyze | app build-kb | app chat | app pipeli
 ## Configuration
 
 All settings come from environment variables (or `.env`); see `.env.example`.
-Key ones: `DATABASE_URL`, `DB_HOST_PORT`, `ANTHROPIC_API_KEY`, `LLM_MODEL`,
-`EMBEDDING_PROVIDER`, `SLACK_WEBHOOK_URL`, `UNDERSTAND_LIMIT`, `LOG_LEVEL`.
+Key ones: `GOOGLE_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`, `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, `DATABASE_URL`, `SLACK_WEBHOOK_URL`, `LOG_LEVEL`.

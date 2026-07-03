@@ -31,9 +31,10 @@ class Settings(BaseSettings):
         description="SQLAlchemy URL for the PostgreSQL + pgvector store.",
     )
 
-    # --- LLM (Anthropic) — used from Phase 3 -----------------------------
-    anthropic_api_key: str | None = Field(default=None)
-    llm_model: str = Field(default="claude-opus-4-8")
+    # --- LLM (Google AI Studio) — used from Phase 3 ----------------------
+    llm_provider: str = Field(default="google", description="LLM provider (pluggable).")
+    google_api_key: str | None = Field(default=None)
+    llm_model: str = Field(default="gemini-2.5-flash")
 
     # --- Embeddings — used from Phase 5 ----------------------------------
     embedding_provider: str = Field(default="local", description="local | voyage | openai")
@@ -54,6 +55,13 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
     api_host: str = Field(default="127.0.0.1")
     api_port: int = Field(default=8000)
+
+    @property
+    def ai_configured(self) -> bool:
+        """Whether the active LLM provider has the credentials it needs."""
+        if self.llm_provider == "google":
+            return self.google_api_key is not None
+        return False  # other providers add their own key check when introduced
 
 
 @lru_cache

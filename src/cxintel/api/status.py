@@ -17,7 +17,10 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from ..config import get_settings
 from ..db import check_health
+
+AI_SETUP_URL = "https://aistudio.google.com/apikey"
 
 
 class ServiceState(StrEnum):
@@ -60,10 +63,20 @@ class Metrics(BaseModel):
     anomaly_count: int | None = None  # Phase 4
 
 
+class AIStatus(BaseModel):
+    """Whether AI generation is configured, plus how to enable it if not."""
+
+    configured: bool
+    provider: str
+    model: str
+    setup_url: str
+
+
 class PlatformStatus(BaseModel):
     """Everything the landing page needs in one typed payload."""
 
     services: list[ServiceStatus] = Field(default_factory=list)
+    ai: AIStatus
     pipeline: list[PipelineStage] = Field(default_factory=list)
     metrics: Metrics = Field(default_factory=Metrics)
 
@@ -122,8 +135,17 @@ def build_status() -> PlatformStatus:
     # request. The client marks it red only when the fetch itself fails.
     api = ServiceStatus(name="FastAPI API", state=ServiceState.OK, detail="serving")
 
+    settings = get_settings()
+    ai = AIStatus(
+        configured=settings.ai_configured,
+        provider=settings.llm_provider,
+        model=settings.llm_model,
+        setup_url=AI_SETUP_URL,
+    )
+
     return PlatformStatus(
         services=[postgres, pgvector, api],
+        ai=ai,
         pipeline=_pipeline_stages(),
         metrics=Metrics(),
     )
