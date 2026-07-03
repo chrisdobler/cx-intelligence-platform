@@ -36,10 +36,13 @@ If Google AI Studio has not yet been configured, the landing page will detect th
 
 Optional: copy `.env.example` to `.env` to override any setting.
 
-> **Port already in use?** The database publishes host port 5432 and Adminer
-> 8080 by default. Override either: `DB_HOST_PORT=5433 ADMINER_HOST_PORT=8081
-> make start` (and set `DATABASE_URL=postgresql+psycopg://cx:cx@localhost:5433/cx`
-> in `.env` if you moved the DB port).
+> **Port already in use?** If the API port is already occupied, `make start`
+> will show the listener and ask whether to stop it before restarting the API.
+> Set `API_PORT=8001` if you prefer to serve the API on a different port.
+> The database publishes host port 5432 and Adminer 8080 by default. Override
+> either: `DB_HOST_PORT=5433 ADMINER_HOST_PORT=8081 make start` (and set
+> `DATABASE_URL=postgresql+psycopg://cx:cx@localhost:5433/cx` in `.env` if you
+> moved the DB port).
 >
 > Adminer auto-logs into the local dev database. Set `ADMINER_AUTOLOGIN=0` in
 > `.env` if you want the normal login form instead.

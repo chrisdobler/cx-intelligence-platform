@@ -19,24 +19,59 @@ DOCKER_CONTEXT ?=
 DOCKER := docker $(if $(strip $(DOCKER_CONTEXT)),--context $(strip $(DOCKER_CONTEXT)))
 COMPOSE := $(DOCKER) compose
 
-.PHONY: help start stop install lock up down db-reset db-health fmt lint lint-fix typecheck test check serve clean ingest understand analyze build-kb chat pipeline
+.PHONY: help start stop install lock up down db-reset db-health fmt lint lint-fix typecheck test check serve clean ingest understand analyze build-kb chat pipeline .ensure-api-port-available
 
 help:  ## Show this help.
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort \
+	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
 
-start:  ## Start the full stack (DB + Adminer + API) and open the control center.
+start: .ensure-api-port-available  ## Start the full stack (DB + Adminer + API) and open the control center.
 	$(COMPOSE) up -d --wait
-	@echo ""
-	@echo "  Conversation Intelligence Platform is starting."
-	@echo "  ─────────────────────────────────────────────"
-	@echo "  Control center   http://localhost:8000"
-	@echo "  API docs         http://localhost:8000/docs"
-	@echo "  Database UI      http://localhost:8080   (auto-login to cx)"
-	@echo "  ─────────────────────────────────────────────"
-	@echo "  Serving the API (Ctrl-C to stop it, then 'make stop' for the containers)."
-	@echo ""
+	@api_port="$$( $(UV) run python -c 'from cxintel.config import get_settings; print(get_settings().api_port)' )"; \
+	echo ""; \
+	echo "  Conversation Intelligence Platform is starting."; \
+	echo "  ─────────────────────────────────────────────"; \
+	echo "  Control center   http://localhost:$$api_port"; \
+	echo "  API docs         http://localhost:$$api_port/docs"; \
+	echo "  Database UI      http://localhost:8080   (auto-login to cx)"; \
+	echo "  ─────────────────────────────────────────────"; \
+	echo "  Serving the API (Ctrl-C to stop it, then 'make stop' for the containers)."; \
+	echo ""
 	$(UV) run app serve
+
+.ensure-api-port-available:
+	@set -e; \
+	api_port="$$( $(UV) run python -c 'from cxintel.config import get_settings; print(get_settings().api_port)' )"; \
+	listeners="$$(lsof -nP -iTCP:"$$api_port" -sTCP:LISTEN -t 2>/dev/null | sort -u || true)"; \
+	if [ -z "$$listeners" ]; then \
+		exit 0; \
+	fi; \
+	echo ""; \
+	echo "  API port $$api_port is already in use."; \
+	echo ""; \
+	lsof -nP -iTCP:"$$api_port" -sTCP:LISTEN || true; \
+	echo ""; \
+	if [ ! -t 0 ]; then \
+		echo "  Non-interactive shell; not killing listener(s). Stop them or set API_PORT." >&2; \
+		exit 1; \
+	fi; \
+	read -r -p "  Kill listener(s) and restart the API? [y/N] " answer; \
+	case "$$answer" in \
+		y|Y|yes|YES) ;; \
+		*) echo "  Aborting. Existing listener(s) left running."; exit 1 ;; \
+	esac; \
+	for pid in $$listeners; do \
+		echo "  Stopping PID $$pid"; \
+		kill "$$pid" 2>/dev/null || true; \
+	done; \
+	for _ in 1 2 3 4 5 6 7 8 9 10; do \
+		remaining="$$(lsof -nP -iTCP:"$$api_port" -sTCP:LISTEN -t 2>/dev/null | sort -u || true)"; \
+		[ -z "$$remaining" ] && exit 0; \
+		sleep 0.5; \
+	done; \
+	echo "  Port $$api_port is still in use after stopping:" >&2; \
+	lsof -nP -iTCP:"$$api_port" -sTCP:LISTEN >&2 || true; \
+	exit 1
 
 stop:  ## Stop the containers (DB + Adminer).
 	$(COMPOSE) down
