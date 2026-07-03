@@ -6,14 +6,17 @@ module, so stage behaviour is defined exactly once. ``STAGES`` is ordered by
 dependency (the pipeline is linear, so list order is a valid topological
 order); each stage still declares its own explicit prerequisites.
 
-Last-run records are kept in memory by design: a durable run-history table is
-listed as future work in ARCHITECTURE.md and is not needed for a single-node
-control center.
+Every stage execution is recorded in the ``pipeline_runs`` table — the
+run-level audit trail. A ``running`` row is written before the stage executes
+(so a crashed process leaves evidence) and finalized when it finishes; both
+writes are best-effort so an audit-write failure never breaks a run (on a
+fresh database the ingest run itself creates the table via migrations).
 """
 
 from __future__ import annotations
 
 import time
+import uuid
 from datetime import UTC, datetime
 
 from pydantic import BaseModel
@@ -45,7 +48,7 @@ class PrerequisitesUnmetError(Exception):
 
 
 class LastRun(BaseModel):
-    """In-memory record of a stage's most recent execution."""
+    """A stage's most recent finished execution, read from ``pipeline_runs``."""
 
     finished_at: datetime
     duration_seconds: float
@@ -70,9 +73,6 @@ class StageStatus(BaseModel):
     open_url: str | None
 
 
-_LAST_RUNS: dict[str, LastRun] = {}
-
-
 def get_stage(key: str) -> PipelineStage:
     """Look up a stage by key; raises ``KeyError`` for unknown keys."""
     for stage in STAGES:
@@ -93,7 +93,84 @@ def _open_session() -> Session | None:
         return None
 
 
-def _status(stage: PipelineStage, session: Session | None) -> StageStatus:
+def _record_start(key: str, trigger: str, started_at: datetime) -> uuid.UUID | None:
+    """Best-effort insert of a ``running`` audit row; None when it can't be written."""
+    from ..db import get_session_factory
+    from ..models import PipelineRun
+    from ..repositories import PipelineRunRepository
+
+    try:
+        with get_session_factory()() as session:
+            run = PipelineRun(
+                id=uuid.uuid4(),
+                stage_key=key,
+                status="running",
+                trigger=trigger,
+                started_at=started_at,
+            )
+            PipelineRunRepository(session).add(run)
+            session.commit()
+            return run.id
+    except Exception:
+        return None
+
+
+def _record_finish(
+    run_id: uuid.UUID | None,
+    key: str,
+    trigger: str,
+    started_at: datetime,
+    duration_seconds: float,
+    *,
+    summary: str | None = None,
+    error: str | None = None,
+) -> None:
+    """Best-effort finalization of the audit row (inserted whole if start failed)."""
+    from ..db import get_session_factory
+    from ..models import PipelineRun
+    from ..repositories import PipelineRunRepository
+
+    try:
+        with get_session_factory()() as session:
+            repo = PipelineRunRepository(session)
+            run = repo.get(run_id) if run_id is not None else None
+            if run is None:
+                run = PipelineRun(
+                    id=uuid.uuid4(), stage_key=key, trigger=trigger, started_at=started_at
+                )
+                repo.add(run)
+            run.status = "succeeded" if error is None else "failed"
+            run.finished_at = datetime.now(tz=UTC)
+            run.duration_seconds = duration_seconds
+            run.summary = summary
+            run.error = error
+            session.commit()
+    except Exception:
+        return None
+
+
+def _last_runs(session: Session | None) -> dict[str, LastRun]:
+    """The most recent finished run per stage, or {} when the DB is unavailable."""
+    from ..repositories import PipelineRunRepository
+
+    if session is None:
+        return {}
+    try:
+        rows = PipelineRunRepository(session).latest_finished_per_stage()
+    except Exception:
+        return {}
+    return {
+        key: LastRun(
+            finished_at=run.finished_at,  # never None: finished rows only
+            duration_seconds=run.duration_seconds or 0.0,
+            summary=(run.summary if run.status == "succeeded" else run.error) or "",
+            ok=run.status == "succeeded",
+        )
+        for key, run in rows.items()
+    }
+
+
+def _status(stage: PipelineStage, session: Session | None, last_run: LastRun | None) -> StageStatus:
     prerequisites = stage.prerequisites(session)
     return StageStatus(
         key=stage.key,
@@ -110,7 +187,7 @@ def _status(stage: PipelineStage, session: Session | None) -> StageStatus:
         ),
         prerequisites=prerequisites,
         outputs=list(stage.outputs),
-        last_run=_LAST_RUNS.get(stage.key),
+        last_run=last_run,
         open_url=stage.open_url,
     )
 
@@ -119,21 +196,82 @@ def stage_statuses() -> list[StageStatus]:
     """Snapshot every stage (one shared session; degrades when the DB is down)."""
     session = _open_session()
     try:
-        return [_status(stage, session) for stage in STAGES]
+        last_runs = _last_runs(session)
+        return [_status(stage, session, last_runs.get(stage.key)) for stage in STAGES]
     finally:
         if session is not None:
             session.close()
+
+
+class RunRecord(BaseModel):
+    """One audit-trail entry, as exposed by the API and the ``app runs`` CLI."""
+
+    id: uuid.UUID
+    stage_key: str
+    stage_label: str
+    status: str
+    trigger: str
+    started_at: datetime
+    finished_at: datetime | None
+    duration_seconds: float | None
+    summary: str | None
+    error: str | None
+
+
+def recent_runs(limit: int = 20) -> list[RunRecord]:
+    """The most recent pipeline runs, newest first ([] when the DB is down).
+
+    Labels are resolved from the current registry; audit rows for stages that
+    no longer exist keep their key as the label.
+    """
+    from ..repositories import PipelineRunRepository
+
+    session = _open_session()
+    if session is None:
+        return []
+    try:
+        rows = PipelineRunRepository(session).recent(limit=limit)
+    except Exception:
+        return []
+    finally:
+        session.close()
+
+    def label(key: str) -> str:
+        try:
+            return get_stage(key).label
+        except KeyError:
+            return key
+
+    return [
+        RunRecord(
+            id=run.id,
+            stage_key=run.stage_key,
+            stage_label=label(run.stage_key),
+            status=run.status,
+            trigger=run.trigger,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+            duration_seconds=run.duration_seconds,
+            summary=run.summary,
+            error=run.error,
+        )
+        for run in rows
+    ]
 
 
 def _noop_progress(_message: str) -> None:
     return None
 
 
-def run_stage(key: str, progress: ProgressCallback = _noop_progress) -> str:
+def run_stage(
+    key: str, progress: ProgressCallback = _noop_progress, trigger: str = "api"
+) -> str:
     """Run one stage synchronously; returns its one-line summary.
 
-    Raises ``KeyError`` (unknown), ``StageNotRunnableError`` (unimplemented or
-    interactive), ``PrerequisitesUnmetError``, or whatever the stage itself raises.
+    The execution is recorded in the ``pipeline_runs`` audit trail with its
+    ``trigger`` source. Raises ``KeyError`` (unknown), ``StageNotRunnableError``
+    (unimplemented or interactive), ``PrerequisitesUnmetError``, or whatever
+    the stage itself raises.
     """
     from ..db import get_session_factory
 
@@ -150,27 +288,19 @@ def run_stage(key: str, progress: ProgressCallback = _noop_progress) -> str:
         reasons = "; ".join(p.detail or p.label for p in unmet)
         raise PrerequisitesUnmetError(f"'{stage.label}' cannot run yet: {reasons}")
 
+    started_at = datetime.now(tz=UTC)
     started = time.monotonic()
+    run_id = _record_start(key, trigger, started_at)
     try:
         summary = stage.run(get_session_factory(), progress)
     except Exception as exc:
-        _LAST_RUNS[key] = LastRun(
-            finished_at=datetime.now(tz=UTC),
-            duration_seconds=time.monotonic() - started,
-            summary=str(exc),
-            ok=False,
-        )
+        _record_finish(run_id, key, trigger, started_at, time.monotonic() - started, error=str(exc))
         raise
-    _LAST_RUNS[key] = LastRun(
-        finished_at=datetime.now(tz=UTC),
-        duration_seconds=time.monotonic() - started,
-        summary=summary,
-        ok=True,
-    )
+    _record_finish(run_id, key, trigger, started_at, time.monotonic() - started, summary=summary)
     return summary
 
 
-def run_remaining(progress: ProgressCallback = _noop_progress) -> str:
+def run_remaining(progress: ProgressCallback = _noop_progress, trigger: str = "api") -> str:
     """Run every incomplete batch stage in dependency order.
 
     Completed stages are never rerun; interactive stages are skipped. On
@@ -202,7 +332,7 @@ def run_remaining(progress: ProgressCallback = _noop_progress) -> str:
             stopped = f"'{stage.label}' is blocked: {reasons}"
             break
         progress(f"Running {stage.label}…")
-        run_stage(stage.key, progress)
+        run_stage(stage.key, progress, trigger)
         ran.append(stage.label)
 
     if ran and stopped:

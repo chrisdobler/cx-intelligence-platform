@@ -65,10 +65,24 @@ class FakeStage(PipelineStage):
 
 
 @pytest.fixture(autouse=True)
-def _reset_last_runs() -> Any:
-    orchestrator._LAST_RUNS.clear()
+def _no_database(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Keep these unit tests off any real database.
+
+    Run recording and last-run lookups degrade gracefully when the DB is
+    unreachable, so pointing at a dead port keeps them pure unit tests (and
+    keeps FakeStage runs out of the dev database's audit trail).
+    """
+    from cxintel.config import get_settings
+    from cxintel.db import get_engine, get_session_factory
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://cx:cx@localhost:1/cx")
+    get_settings.cache_clear()
+    get_engine.cache_clear()
+    get_session_factory.cache_clear()
     yield
-    orchestrator._LAST_RUNS.clear()
+    get_settings.cache_clear()
+    get_engine.cache_clear()
+    get_session_factory.cache_clear()
 
 
 def use_stages(monkeypatch: pytest.MonkeyPatch, *stages: FakeStage) -> None:
@@ -116,16 +130,15 @@ def test_statuses_report_runnable(monkeypatch: pytest.MonkeyPatch) -> None:
 # --- run_stage --------------------------------------------------------------
 
 
-def test_run_stage_runs_and_records_last_run(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_stage_runs_and_returns_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     stage = FakeStage("a")
     use_stages(monkeypatch, stage)
     summary = run_stage("a")
     assert summary == "a done"
     assert stage.run_calls == 1
-    status = stage_statuses()[0]
-    assert status.last_run is not None
-    assert status.last_run.ok is True
-    assert status.last_run.summary == "a done"
+    # Run recording is DB-backed (see test_pipeline_runs.py); with the DB
+    # unreachable there is no last_run, and the run itself still succeeds.
+    assert stage_statuses()[0].last_run is None
 
 
 def test_run_stage_unknown_key_raises() -> None:
@@ -151,13 +164,10 @@ def test_run_stage_prereqs_unmet(monkeypatch: pytest.MonkeyPatch) -> None:
         run_stage("a")
 
 
-def test_run_stage_failure_records_failed_last_run(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_stage_failure_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
     use_stages(monkeypatch, FakeStage("a", fail=True))
     with pytest.raises(RuntimeError):
         run_stage("a")
-    status = stage_statuses()[0]
-    assert status.last_run is not None
-    assert status.last_run.ok is False
 
 
 # --- run_remaining ----------------------------------------------------------

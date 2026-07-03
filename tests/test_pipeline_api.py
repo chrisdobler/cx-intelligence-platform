@@ -120,3 +120,57 @@ def test_run_remaining_end_to_end(
     # Ran ingest, then stopped cleanly at the unimplemented understand stage.
     assert "Data Ingestion" in job["message"]
     assert "not yet implemented" in job["message"]
+
+
+def test_runs_endpoint_empty(settings_on_test_db: str, db_session: Any) -> None:
+    assert client.get("/api/pipeline/runs").json() == []
+
+
+def test_runs_endpoint_lists_api_triggered_run(
+    tmp_path: Path,
+    settings_on_test_db: str,
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: Any,
+) -> None:
+    dataset = tmp_path / "tickets.json"
+    dataset.write_text(json.dumps([make_record()]), encoding="utf-8")
+    monkeypatch.setenv("RAW_DATA_PATH", str(dataset))
+    monkeypatch.chdir(Path(__file__).resolve().parent.parent)
+    from cxintel.config import get_settings
+
+    get_settings.cache_clear()
+
+    assert client.post("/api/pipeline/ingest/run").status_code == 202
+    runs = client.get("/api/pipeline/runs").json()
+    assert len(runs) == 1
+    run = runs[0]
+    assert run["stage_key"] == "ingest"
+    assert run["stage_label"] == "Data Ingestion"
+    assert run["status"] == "succeeded"
+    assert run["trigger"] == "api"
+    assert run["started_at"] and run["finished_at"]
+    assert run["duration_seconds"] >= 0
+    assert "1 conversations" in run["summary"]
+    assert run["error"] is None
+
+    # limit is honoured
+    assert client.post("/api/pipeline/ingest/run").status_code == 202
+    assert len(client.get("/api/pipeline/runs?limit=1").json()) == 1
+
+
+def test_runs_endpoint_degrades_when_db_down(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cxintel.config import get_settings
+    from cxintel.db import get_engine, get_session_factory
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://cx:cx@localhost:1/cx")
+    get_settings.cache_clear()
+    get_engine.cache_clear()
+    get_session_factory.cache_clear()
+    try:
+        response = client.get("/api/pipeline/runs")
+        assert response.status_code == 200
+        assert response.json() == []
+    finally:
+        get_settings.cache_clear()
+        get_engine.cache_clear()
+        get_session_factory.cache_clear()

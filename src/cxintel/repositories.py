@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from .models import Anomaly, Conversation, ConversationAnalysis, Message
+from .models import Anomaly, Conversation, ConversationAnalysis, Message, PipelineRun
 
 
 class ConversationRepository:
@@ -103,6 +103,37 @@ class ConversationAnalysisRepository:
 
     def get(self, conversation_id: uuid.UUID) -> ConversationAnalysis | None:
         return self._session.get(ConversationAnalysis, conversation_id)
+
+
+class PipelineRunRepository:
+    """Persistence for :class:`PipelineRun` rows — the pipeline audit trail."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, run: PipelineRun) -> None:
+        self._session.add(run)
+
+    def get(self, run_id: uuid.UUID) -> PipelineRun | None:
+        return self._session.get(PipelineRun, run_id)
+
+    def latest_finished_per_stage(self) -> dict[str, PipelineRun]:
+        """The most recent finished run for each stage (running rows excluded)."""
+        rows = self._session.execute(
+            select(PipelineRun)
+            .distinct(PipelineRun.stage_key)
+            .where(PipelineRun.finished_at.is_not(None))
+            .order_by(PipelineRun.stage_key, PipelineRun.started_at.desc())
+        ).scalars()
+        return {run.stage_key: run for run in rows}
+
+    def recent(self, limit: int = 20) -> list[PipelineRun]:
+        """The most recent runs, newest first (running rows included)."""
+        return list(
+            self._session.execute(
+                select(PipelineRun).order_by(PipelineRun.started_at.desc()).limit(limit)
+            ).scalars()
+        )
 
 
 class AnomalyRepository:

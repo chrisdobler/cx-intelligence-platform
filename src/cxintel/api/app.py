@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -22,7 +22,7 @@ from ..config import get_settings, set_env_key
 from ..db import check_health
 from ..pipeline import orchestrator
 from ..pipeline.jobs import TRACKER, Job, JobBusyError
-from ..pipeline.orchestrator import run_remaining, run_stage
+from ..pipeline.orchestrator import RunRecord, recent_runs, run_remaining, run_stage
 from ..pipeline.stages import StageKind
 from .status import PlatformStatus, build_status
 
@@ -92,6 +92,12 @@ def api_config() -> dict[str, object]:
         "api_host": s.api_host,
         "api_port": s.api_port,
     }
+
+
+@app.get("/api/pipeline/runs")
+def pipeline_runs(limit: int = Query(default=20, ge=1, le=200)) -> list[RunRecord]:
+    """The pipeline audit trail — recent runs, newest first ([] when the DB is down)."""
+    return recent_runs(limit=limit)
 
 
 @app.post("/api/pipeline/{key}/run", status_code=202)

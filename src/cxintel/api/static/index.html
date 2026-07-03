@@ -120,6 +120,17 @@
     .stage-card .foot { display: flex; align-items: center; gap: 10px; margin-top: auto; }
     .stage-card .reason { color: var(--muted); font-size: 12.5px; }
 
+    /* Recent runs (audit trail) */
+    .runs-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .runs-table td { padding: 5px 10px 5px 0; border-top: 1px solid var(--border); vertical-align: top; }
+    .runs-table tr:first-child td { border-top: none; }
+    .runs-table .stage { font-weight: 600; white-space: nowrap; }
+    .runs-table .meta { color: var(--muted); white-space: nowrap; }
+    .runs-table .detail { color: var(--muted); }
+    .runs-table .detail.err { color: var(--red); }
+    .runs-table .dot { width: 9px; height: 9px; margin-top: 5px; }
+    .runs-empty { color: var(--muted); font-size: 13px; }
+
     /* Metrics */
     .metric .value { font-size: 24px; font-weight: 700; }
     .metric .label { color: var(--muted); font-size: 13px; }
@@ -185,6 +196,10 @@
       <div class="grid cols-2" id="stage-cards" style="margin-top:12px;"></div>
       <div class="card" style="margin-top:12px;">
         <div class="grid cols-2" id="metrics"></div>
+      </div>
+      <div class="card" style="margin-top:12px;">
+        <h2 style="margin-bottom:10px;">Recent Runs</h2>
+        <div id="recent-runs" class="runs-empty">Loading…</div>
       </div>
     </section>
 
@@ -417,6 +432,38 @@
       ).join("");
     }
 
+    function renderRuns(runs) {
+      const el = document.getElementById("recent-runs");
+      if (!runs.length) {
+        el.className = "runs-empty";
+        el.textContent = "No runs recorded yet.";
+        return;
+      }
+      const dotClass = { succeeded: "ok", failed: "down", running: "degraded" };
+      el.className = "";
+      el.innerHTML = `<table class="runs-table">${runs.map((r) => {
+        const started = new Date(r.started_at).toLocaleString();
+        const duration = r.duration_seconds === null ? "…" : `${Math.round(r.duration_seconds)}s`;
+        const detail = r.status === "failed" ? (r.error ?? "") : (r.summary ?? "running…");
+        return `<tr>
+          <td><span class="dot ${dotClass[r.status] ?? ""}"></span></td>
+          <td class="stage">${r.stage_label}</td>
+          <td class="meta">${started}</td>
+          <td class="meta">${duration} · ${r.trigger}</td>
+          <td class="detail ${r.status === "failed" ? "err" : ""}">${detail}</td>
+        </tr>`;
+      }).join("")}</table>`;
+    }
+
+    async function loadRuns() {
+      try {
+        const res = await fetch("/api/pipeline/runs?limit=10");
+        renderRuns(await res.json());
+      } catch (e) {
+        // status fetch failure already surfaces the outage; leave the panel as-is
+      }
+    }
+
     async function load() {
       try {
         const res = await fetch("/api/status");
@@ -426,6 +473,7 @@
         renderStageCards(data.pipeline, data.job);
         renderJob(data.job, data.pipeline);
         renderMetrics(data.metrics);
+        await loadRuns();
         if (!data.job || data.job.state !== "running") stopPolling();
       } catch (e) {
         document.getElementById("services").innerHTML =

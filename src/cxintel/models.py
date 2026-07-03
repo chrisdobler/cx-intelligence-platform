@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -84,6 +84,29 @@ class ConversationAnalysis(Base):
     prompt_version: Mapped[str] = mapped_column(String)
     processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     analysis_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+
+
+class PipelineRun(Base):
+    """One execution of a pipeline stage — the run-level audit trail.
+
+    Every stage run is recorded: what ran, when, what triggered it (API or
+    CLI), and how it ended. A row stuck in ``running`` is evidence of a
+    crashed process. Per-AI-call observability (model, latency, token usage —
+    Phase 7) will reference these runs.
+    """
+
+    __tablename__ = "pipeline_runs"
+    __table_args__ = (Index("ix_pipeline_runs_stage_key_started_at", "stage_key", "started_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    stage_key: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String)  # running | succeeded | failed
+    trigger: Mapped[str] = mapped_column(String)  # api | cli
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    summary: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
 
 
 class Anomaly(Base):

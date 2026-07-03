@@ -78,6 +78,9 @@ def db_session(migrated_engine: Engine) -> Iterator[Session]:
     session.close()
     with migrated_engine.connect() as conn:
         conn.execute(
-            text("truncate conversations, messages, conversation_analyses, anomalies cascade")
+            text(
+                "truncate conversations, messages, conversation_analyses,"
+                " anomalies, pipeline_runs cascade"
+            )
         )
         conn.commit()

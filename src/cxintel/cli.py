@@ -81,7 +81,7 @@ def ingest() -> None:
     from .pipeline.orchestrator import run_stage
 
     try:
-        summary = run_stage("ingest", progress=typer.echo)
+        summary = run_stage("ingest", progress=typer.echo, trigger="cli")
     except Exception as exc:
         typer.secho(f"ingestion failed: {exc}", fg=typer.colors.RED)
         raise typer.Exit(code=1) from exc
@@ -147,11 +147,41 @@ def pipeline() -> None:
     from .pipeline.orchestrator import run_remaining
 
     try:
-        summary = run_remaining(progress=typer.echo)
+        summary = run_remaining(progress=typer.echo, trigger="cli")
     except Exception as exc:
         typer.secho(f"pipeline failed: {exc}", fg=typer.colors.RED)
         raise typer.Exit(code=1) from exc
     typer.secho(summary, fg=typer.colors.GREEN)
+
+
+@app.command()
+def runs(limit: int = typer.Option(20, help="Maximum number of runs to show.")) -> None:
+    """Show the pipeline audit trail — recent stage runs, newest first."""
+    from .db import check_health
+    from .pipeline.orchestrator import recent_runs
+
+    health = check_health()
+    if not health.connected:
+        typer.secho(f"run history unavailable: database unreachable ({health.error})", fg="red")
+        raise typer.Exit(code=1)
+
+    records = recent_runs(limit=limit)
+    if not records:
+        typer.secho("No pipeline runs recorded yet.", fg=typer.colors.YELLOW)
+        return
+
+    for run in records:
+        started = run.started_at.strftime("%Y-%m-%d %H:%M:%S")
+        duration = f"{run.duration_seconds:.1f}s" if run.duration_seconds is not None else "—"
+        detail = run.error if run.status == "failed" else (run.summary or "")
+        color = {"succeeded": typer.colors.GREEN, "failed": typer.colors.RED}.get(
+            run.status, typer.colors.YELLOW
+        )
+        typer.secho(
+            f"{started}  {run.stage_key:<20} {run.status:<9} {run.trigger:<4} "
+            f"{duration:>7}  {detail}",
+            fg=color,
+        )
 
 
 @app.command()

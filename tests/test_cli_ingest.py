@@ -89,6 +89,29 @@ def test_pipeline_command_runs_remaining_and_stops_cleanly(
     assert "not yet implemented" in result.output  # stopped at understand
 
 
+def test_runs_command_lists_cli_triggered_runs(
+    tmp_path: Path, settings_on_test_db: str, monkeypatch: Any, db_session: Any
+) -> None:
+    path = write_dataset(tmp_path, [make_record()])
+    monkeypatch.setenv("RAW_DATA_PATH", str(path))
+    from cxintel.config import get_settings
+
+    get_settings.cache_clear()
+    assert runner.invoke(app, ["ingest"]).exit_code == 0
+
+    result = runner.invoke(app, ["runs"])
+    assert result.exit_code == 0, result.output
+    assert "ingest" in result.output
+    assert "succeeded" in result.output
+    assert "cli" in result.output
+
+
+def test_runs_command_empty_history(settings_on_test_db: str, db_session: Any) -> None:
+    result = runner.invoke(app, ["runs"])
+    assert result.exit_code == 0, result.output
+    assert "No pipeline runs recorded yet." in result.output
+
+
 def test_understand_stub_reports_planned_phase() -> None:
     result = runner.invoke(app, ["understand"])
     assert result.exit_code == 1
