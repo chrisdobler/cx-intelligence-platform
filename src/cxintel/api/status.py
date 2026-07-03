@@ -81,14 +81,34 @@ class PlatformStatus(BaseModel):
     metrics: Metrics = Field(default_factory=Metrics)
 
 
-def _pipeline_stages() -> list[PipelineStage]:
+def _ingest_metrics() -> Metrics:
+    """Headline counts from the database, or empty metrics when unavailable.
+
+    Degrades gracefully (like :func:`cxintel.db.check_health`) so the status
+    endpoint keeps working when the database is down or not yet migrated.
+    """
+    from ..db import get_session_factory
+    from ..repositories import ConversationRepository
+
+    try:
+        with get_session_factory()() as session:
+            return Metrics(imported_conversations=ConversationRepository(session).count())
+    except Exception:
+        return Metrics()
+
+
+def _pipeline_stages(ingested: bool) -> list[PipelineStage]:
     """The pipeline stages shown on the control center.
 
-    All stages are ``pending`` in the current phase. As each phase lands, flip
-    its ``state`` to ``StageState.DONE`` (later: derive it from a real check).
+    Each stage flips to ``done`` once its phase has produced data; only
+    ingestion (Phase 2) has a real check so far.
     """
     return [
-        PipelineStage(key="ingest", label="Dataset Imported", state=StageState.PENDING),
+        PipelineStage(
+            key="ingest",
+            label="Dataset Imported",
+            state=StageState.DONE if ingested else StageState.PENDING,
+        ),
         PipelineStage(
             key="understand",
             label="Conversation Understanding",
@@ -143,9 +163,10 @@ def build_status() -> PlatformStatus:
         setup_url=AI_SETUP_URL,
     )
 
+    metrics = _ingest_metrics()
     return PlatformStatus(
         services=[postgres, pgvector, api],
         ai=ai,
-        pipeline=_pipeline_stages(),
-        metrics=Metrics(),
+        pipeline=_pipeline_stages(ingested=bool(metrics.imported_conversations)),
+        metrics=metrics,
     )

@@ -6,6 +6,7 @@ endpoint that the landing page's "Enable AI Capabilities" card calls.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,7 @@ from cxintel.config import get_settings, set_env_key
 
 
 @pytest.fixture(autouse=True)
-def _isolated_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+def _isolated_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
     """Run each test in a temp CWD with no key set and a fresh settings cache.
 
     ``monkeypatch`` snapshots the environment, so a key the endpoint sets via

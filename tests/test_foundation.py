@@ -28,5 +28,5 @@ def test_get_settings_is_cached() -> None:
 
 
 def test_stub_command_exits_nonzero() -> None:
-    result = runner.invoke(app, ["ingest"])
+    result = runner.invoke(app, ["understand"])
     assert result.exit_code == 1

@@ -19,7 +19,7 @@ DOCKER_CONTEXT ?=
 DOCKER := docker $(if $(strip $(DOCKER_CONTEXT)),--context $(strip $(DOCKER_CONTEXT)))
 COMPOSE := $(DOCKER) compose
 
-.PHONY: help start stop install lock up down db-reset db-health fmt lint lint-fix typecheck test check serve clean ingest understand analyze build-kb chat pipeline .ensure-api-port-available
+.PHONY: help start stop install lock up down db-reset db-health db-migrate fmt lint lint-fix typecheck test check serve clean ingest stats understand analyze build-kb chat pipeline .ensure-api-port-available
 
 help:  ## Show this help.
 	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort \
@@ -95,6 +95,9 @@ db-reset:  ## Recreate the database from scratch (drops the volume).
 db-health:  ## Check database connectivity and pgvector availability.
 	$(UV) run app db health
 
+db-migrate:  ## Apply database migrations.
+	$(UV) run alembic upgrade head
+
 fmt:  ## Format the code with Ruff.
 	$(UV) run ruff format .
 
@@ -121,6 +124,9 @@ clean:  ## Remove caches and build artifacts.
 
 ingest:  ## [Phase 2] Load and normalise the raw dataset.
 	$(UV) run app ingest
+
+stats:  ## [Phase 2] Show ingestion statistics.
+	$(UV) run app stats
 
 understand:  ## [Phase 3] Run LLM conversation understanding.
 	$(UV) run app understand

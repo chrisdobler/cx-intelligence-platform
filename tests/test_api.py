@@ -2,9 +2,24 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
 from cxintel.api.app import app
+from cxintel.config import get_settings
+
+
+@pytest.fixture(autouse=True)
+def _unconfigured_ai(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
+    """Isolate from the developer's real .env — these tests assume no API key."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def test_health_endpoint_returns_ok() -> None:

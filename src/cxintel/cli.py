@@ -60,10 +60,78 @@ def db_health() -> None:
     raise typer.Exit(code=1)
 
 
+@db_app.command("upgrade")
+def db_upgrade() -> None:
+    """Apply database migrations (alembic upgrade head)."""
+    from alembic import command
+    from alembic.config import Config
+
+    command.upgrade(Config("alembic.ini"), "head")
+    typer.secho("migrations: up to date", fg=typer.colors.GREEN)
+
+
 @app.command()
 def ingest() -> None:
-    """Load and normalise the raw ticket dataset (Phase 2)."""
-    _not_implemented("ingest", "Phase 2")
+    """Import the raw ticket dataset into PostgreSQL (idempotent)."""
+    from pathlib import Path
+
+    from alembic import command
+    from alembic.config import Config
+
+    from .config import get_settings
+    from .db import get_session_factory
+    from .ingestion.service import IngestionService
+
+    settings = get_settings()
+    path = Path(settings.raw_data_path)
+    if not path.exists():
+        typer.secho(f"dataset not found: {path}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    try:
+        command.upgrade(Config("alembic.ini"), "head")
+        with get_session_factory()() as session:
+            result = IngestionService(session).ingest(path)
+    except Exception as exc:
+        typer.secho(f"ingestion failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    conv_skipped = result.conversations_seen - result.conversations_inserted
+    msg_skipped = result.messages_seen - result.messages_inserted
+    typer.secho(
+        f"Ingested {result.conversations_seen} conversations ({conv_skipped} skipped), "
+        f"{result.messages_seen} messages ({msg_skipped} skipped).",
+        fg=typer.colors.GREEN,
+    )
+
+
+@app.command()
+def stats() -> None:
+    """Report ingestion statistics — verifies the import completed."""
+    from .db import get_session_factory
+    from .repositories import ConversationRepository, MessageRepository
+
+    try:
+        with get_session_factory()() as session:
+            conversations = ConversationRepository(session)
+            total = conversations.count()
+            by_status = conversations.count_by_status()
+            date_range = conversations.date_range()
+            messages = MessageRepository(session).count()
+    except Exception as exc:
+        typer.secho(f"stats unavailable: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    if total == 0:
+        typer.secho("No conversations found — run 'make ingest' first.", fg=typer.colors.YELLOW)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Total conversations : {total}")
+    typer.echo(f"Total messages      : {messages}")
+    for status in ("resolved", "open", "pending", "escalated"):
+        typer.echo(f"  {status:<18}: {by_status.get(status, 0)}")
+    if date_range is not None:
+        typer.echo(f"Dataset date range  : {date_range[0].date()} → {date_range[1].date()}")
 
 
 @app.command()
