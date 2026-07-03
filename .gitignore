@@ -29,3 +29,11 @@ build/
 # Coverage
 .coverage
 htmlcov/
+
+# Data — large raw dataset and derived artifacts (keep the dir via .gitkeep)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+/IMPLEMENTATION_PLAN.md
+/ARCHITECTURE.md
