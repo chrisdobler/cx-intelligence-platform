@@ -20,6 +20,10 @@ from pydantic import BaseModel
 from .. import __version__
 from ..config import get_settings, set_env_key
 from ..db import check_health
+from ..pipeline import orchestrator
+from ..pipeline.jobs import TRACKER, Job, JobBusyError
+from ..pipeline.orchestrator import run_remaining, run_stage
+from ..pipeline.stages import StageKind
 from .status import PlatformStatus, build_status
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -88,6 +92,44 @@ def api_config() -> dict[str, object]:
         "api_host": s.api_host,
         "api_port": s.api_port,
     }
+
+
+@app.post("/api/pipeline/{key}/run", status_code=202)
+def run_pipeline_stage(key: str) -> Job:
+    """Run one pipeline stage in the background (202 with the job snapshot)."""
+    try:
+        stage = orchestrator.get_stage(key)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown pipeline stage '{key}'.") from None
+
+    if stage.kind is StageKind.INTERACTIVE:
+        raise HTTPException(
+            status_code=422, detail=f"'{stage.label}' is interactive — open it instead."
+        )
+    if not stage.implemented:
+        raise HTTPException(
+            status_code=422,
+            detail=f"'{stage.label}' is not yet implemented"
+            + (f" (planned for {stage.planned_phase})." if stage.planned_phase else "."),
+        )
+    unmet = [s for s in orchestrator.stage_statuses() if s.key == key and not s.runnable]
+    if unmet:
+        reasons = "; ".join(p.detail or p.label for p in unmet[0].prerequisites if not p.met)
+        raise HTTPException(status_code=422, detail=f"'{stage.label}' cannot run yet: {reasons}")
+
+    try:
+        return TRACKER.start(key, lambda progress: run_stage(key, progress))
+    except JobBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/pipeline/run", status_code=202)
+def run_remaining_pipeline() -> Job:
+    """Run every incomplete pipeline stage in dependency order, in the background."""
+    try:
+        return TRACKER.start("pipeline", run_remaining)
+    except JobBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 class GoogleKeyRequest(BaseModel):

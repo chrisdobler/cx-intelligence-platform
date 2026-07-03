@@ -74,6 +74,27 @@ def test_ingest_missing_file_fails_cleanly(
     assert "missing.json" in result.output
 
 
+def test_pipeline_command_runs_remaining_and_stops_cleanly(
+    tmp_path: Path, settings_on_test_db: str, monkeypatch: Any, db_session: Any
+) -> None:
+    path = write_dataset(tmp_path, [make_record()])
+    monkeypatch.setenv("RAW_DATA_PATH", str(path))
+    from cxintel.config import get_settings
+
+    get_settings.cache_clear()
+
+    result = runner.invoke(app, ["pipeline"])
+    assert result.exit_code == 0, result.output
+    assert "Data Ingestion" in result.output
+    assert "not yet implemented" in result.output  # stopped at understand
+
+
+def test_understand_stub_reports_planned_phase() -> None:
+    result = runner.invoke(app, ["understand"])
+    assert result.exit_code == 1
+    assert "Phase 3" in result.output
+
+
 def test_status_reports_ingested_metrics(
     tmp_path: Path, settings_on_test_db: str, monkeypatch: Any, db_session: Any
 ) -> None:

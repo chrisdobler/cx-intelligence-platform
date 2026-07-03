@@ -156,38 +156,76 @@ Basic evaluation and observability framework.
 
 ---
 
-# Phase 8 — Developer Experience
+# Phase 8 — Developer Experience & Pipeline Control Center
 
 ## Objectives
 
-Make the platform immediately understandable and easy to demonstrate. After
-`git clone`, a reviewer runs one command, opens one URL, and discovers
-everything without reading documentation.
+Make the platform immediately understandable, easy to demonstrate, and
+**operable from the landing page**. After `git clone`, a reviewer runs one
+command, opens one URL, and can discover *and drive* the whole platform
+without reading documentation.
 
 - One-command lifecycle: `make start` (DB + Adminer + API, prints the URLs) and
   `make stop`.
 - The application should remain usable even before AI is configured. Infrastructure services (PostgreSQL, pgvector, Adminer, FastAPI, API documentation, and the landing page) must start successfully without a `GOOGLE_API_KEY`.
-- The landing page should detect whether `GOOGLE_API_KEY` is configured. If it is missing, present a short onboarding flow that explains how to obtain a free Google AI Studio API key and which AI capabilities are currently disabled.
-- Once the key is configured and the application is restarted, Conversation Understanding, Knowledge Base generation, and the Resolution Assistant should become available without any additional configuration.
-- A minimal **control-center landing page** at `/`, served by FastAPI from a
-  single static file (no front-end framework — respects the complexity budget):
-  - **Service Status** — green/yellow/red for PostgreSQL, pgvector, API.
-  - **Pipeline Status** — the five processing stages plus headline counts.
-  - **Quick Actions / Quick Links** — API docs, database UI, health, config.
+
+### Pipeline control center
+
+The landing page at `/` is the operational control center, not a passive
+dashboard (single static file served by FastAPI — no front-end framework,
+respecting the complexity budget):
+
+- **Service Status** — green/yellow/red for PostgreSQL, pgvector, API.
+- **Stage cards** — one card per pipeline stage (Data Ingestion, Conversation
+  Understanding, Knowledge Base, Anomaly Detection, Resolution Assistant),
+  each showing: name, short description, status, prerequisites (with
+  explanations when unmet), outputs produced, last execution time, and a
+  primary action button (Run / Run Again / Open).
+- **Run Remaining Pipeline** — a prominent top-level action that executes
+  every incomplete stage in dependency order, skipping completed stages, and
+  stopping cleanly with an explanation at the first blocked or
+  not-yet-implemented stage.
+- **Stage dependency handling** — stages whose prerequisites are unmet are
+  disabled and explain why; stages whose phase has not landed are disabled
+  with the planned phase. Completion is derived from the data, so nothing is
+  rerun unnecessarily.
+- **Quick Actions / Quick Links** — API docs, database UI, health, config.
+
+### Orchestration
+
+- A single orchestration layer (`cxintel.pipeline`) defines the stages, their
+  prerequisites, and execution. The CLI (`app ingest`, `app pipeline`), the
+  REST API (`POST /api/pipeline/{stage}/run`, `POST /api/pipeline/run`), and
+  the landing page all call this one layer — no duplicated business logic.
+- Background execution: one in-process worker, one job at a time; the page
+  polls status while a job runs. Run state is in memory (durable run history
+  is future work).
+
+### Onboarding / AI setup
+
+- The landing page detects whether `GOOGLE_API_KEY` is configured. If missing,
+  an **Enable AI Capabilities** card explains that infrastructure works
+  without a key and which AI stages are disabled, links to Google AI Studio,
+  and accepts the key through a secure password-style input with **Save
+  Configuration** — written only to the local `.env`, never echoed back, and
+  applied live (no restart needed).
+- Once the key is saved, AI-stage prerequisites flip to met automatically.
+
+### Miscellaneous
+
 - **Adminer** in Docker Compose so the database is inspectable with no external
   tools.
-- Typed JSON status surface (`/api/status`, `/api/config`) structured so later
-  phases populate live counts (imported / processed / embeddings / anomalies)
-  by editing `api/status.py` only — the page never needs redesigning.
+- Typed JSON status surface (`/api/status`, `/api/config`): the stage cards,
+  job state, and headline counts all come from one payload; later phases light
+  their stages up by implementing the stage's `run()` — the page never needs
+  redesigning.
 - Keep the simple commands working (`uv sync`, `uv run app pipeline`,
   `uv run app chat`); README, architecture docs, and a reproducible environment.
-
-- The landing page should detect whether `GOOGLE_API_KEY` is configured and guide first-time users through enabling AI capabilities without preventing the rest of the platform from running.
 
 Deliverable:
 
 `git clone … && make start`, open http://localhost:8000, and the whole platform
-is discoverable from the control center.
+is discoverable — and runnable — from the control center.
 
 ---
 

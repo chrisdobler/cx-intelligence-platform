@@ -22,9 +22,14 @@ db_app = typer.Typer(help="Database utilities.", no_args_is_help=True)
 app.add_typer(db_app, name="db")
 
 
-def _not_implemented(stage: str, phase: str) -> None:
+def _not_implemented(stage_key: str) -> None:
+    """Report a not-yet-implemented stage, sourced from the pipeline registry."""
+    from .pipeline.orchestrator import get_stage
+
+    stage = get_stage(stage_key)
+    phase = stage.planned_phase or "a later phase"
     typer.secho(
-        f"'{stage}' is not implemented yet (planned for {phase}).",
+        f"'{stage.label}' is not implemented yet (planned for {phase}).",
         fg=typer.colors.YELLOW,
     )
     raise typer.Exit(code=1)
@@ -73,36 +78,14 @@ def db_upgrade() -> None:
 @app.command()
 def ingest() -> None:
     """Import the raw ticket dataset into PostgreSQL (idempotent)."""
-    from pathlib import Path
-
-    from alembic import command
-    from alembic.config import Config
-
-    from .config import get_settings
-    from .db import get_session_factory
-    from .ingestion.service import IngestionService
-
-    settings = get_settings()
-    path = Path(settings.raw_data_path)
-    if not path.exists():
-        typer.secho(f"dataset not found: {path}", fg=typer.colors.RED)
-        raise typer.Exit(code=1)
+    from .pipeline.orchestrator import run_stage
 
     try:
-        command.upgrade(Config("alembic.ini"), "head")
-        with get_session_factory()() as session:
-            result = IngestionService(session).ingest(path)
+        summary = run_stage("ingest", progress=typer.echo)
     except Exception as exc:
         typer.secho(f"ingestion failed: {exc}", fg=typer.colors.RED)
         raise typer.Exit(code=1) from exc
-
-    conv_skipped = result.conversations_seen - result.conversations_inserted
-    msg_skipped = result.messages_seen - result.messages_inserted
-    typer.secho(
-        f"Ingested {result.conversations_seen} conversations ({conv_skipped} skipped), "
-        f"{result.messages_seen} messages ({msg_skipped} skipped).",
-        fg=typer.colors.GREEN,
-    )
+    typer.secho(summary, fg=typer.colors.GREEN)
 
 
 @app.command()
@@ -137,31 +120,38 @@ def stats() -> None:
 @app.command()
 def understand() -> None:
     """Run LLM conversation understanding (Phase 3)."""
-    _not_implemented("understand", "Phase 3")
+    _not_implemented("understand")
 
 
 @app.command()
 def analyze() -> None:
     """Detect emerging issue clusters and emit Slack alerts (Phase 4)."""
-    _not_implemented("analyze", "Phase 4")
+    _not_implemented("anomaly")
 
 
 @app.command("build-kb")
 def build_kb() -> None:
     """Embed resolved conversations into the knowledge base (Phase 5)."""
-    _not_implemented("build-kb", "Phase 5")
+    _not_implemented("knowledge_base")
 
 
 @app.command()
 def chat() -> None:
     """Interactive Resolution Assistant (Phase 6)."""
-    _not_implemented("chat", "Phase 6")
+    _not_implemented("resolution_assistant")
 
 
 @app.command()
 def pipeline() -> None:
-    """Run the full ingest -> understand -> build-kb pipeline (Phase 8)."""
-    _not_implemented("pipeline", "Phase 8")
+    """Run every incomplete pipeline stage in dependency order."""
+    from .pipeline.orchestrator import run_remaining
+
+    try:
+        summary = run_remaining(progress=typer.echo)
+    except Exception as exc:
+        typer.secho(f"pipeline failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+    typer.secho(summary, fg=typer.colors.GREEN)
 
 
 @app.command()

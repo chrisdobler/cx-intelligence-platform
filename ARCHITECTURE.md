@@ -78,6 +78,45 @@ The resulting structured representation becomes the foundation for:
 
 ---
 
+# Pipeline Orchestration
+
+Each processing stage — Data Ingestion, Conversation Understanding, Knowledge
+Base Generation, Anomaly Detection, and the Resolution Assistant — is exposed
+as an **independently executable pipeline job** behind a common interface:
+
+- current status (complete / pending, derived from the data itself)
+- prerequisites, each with a human-readable explanation when unmet
+- `run()` with progress reporting
+- execution metrics and last execution time
+
+A single **orchestration layer** (`cxintel.pipeline`) owns stage definitions,
+dependency ordering, and execution. The CLI, the REST API, and the landing-page
+control center all invoke this one layer, so business logic is never
+duplicated: `app ingest` and clicking **Run** on the Ingestion card execute
+exactly the same code path.
+
+Stages are ordered linearly (a valid topological order for this pipeline), but
+each stage declares its own explicit prerequisites — Anomaly Detection depends
+on Conversation Understanding, not on the Knowledge Base. Stages come in two
+kinds: **batch** stages run to completion; **interactive** stages (the
+Resolution Assistant) are opened rather than run. Stages whose phase has not
+landed yet report themselves as not implemented and cannot be run — the
+control center shows them disabled with the planned phase.
+
+**Run Remaining Pipeline** walks the stages in dependency order, skips
+anything already complete (stage completion is derived from the data, so
+nothing is rerun unnecessarily), executes each runnable incomplete stage, and
+stops cleanly with an explanation on reaching a stage that is blocked or not
+yet implemented.
+
+Execution is deliberately simple: one in-process background worker runs one
+job at a time, and the control center polls the status endpoint while a job is
+active. Run state and last-execution records are kept in memory — a message
+queue or durable run-history table is not justified at this scale (see the
+complexity budget); durable run history is listed under Future Enhancements.
+
+---
+
 # Major Components
 
 ## 1. Data Ingestion
@@ -198,4 +237,5 @@ Potential production improvements:
 - automated regression testing
 - tool calling
 - background workers
+- durable pipeline run history (runs are tracked in memory today)
 - streaming responses

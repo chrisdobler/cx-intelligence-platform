@@ -5,11 +5,13 @@ detecting emerging operational issues, and assisting agents through
 retrieval-augmented generation (RAG).
 
 - **Design:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
-- **Plan / status:** [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)
+- **Plan / status:** [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
 
-> **Status: Phase 1 (Foundation) complete.** This is a runnable skeleton —
-> tooling, database infrastructure, configuration, and the CLI/API shells.
-> No pipeline logic yet; every stage command is a stub. See the plan for the
+> **Status: Phase 2 (Data Ingestion) complete, with pipeline orchestration.**
+> The dataset can be ingested idempotently, and every pipeline stage is
+> exposed as an independent job runnable from the landing page, the CLI, or
+> the REST API. The AI stages (understanding, knowledge base, anomaly
+> detection, resolution assistant) land in Phases 3–6. See the plan for the
 > phase roadmap.
 
 ## Prerequisites
@@ -50,12 +52,28 @@ Optional: copy `.env.example` to `.env` to override any setting.
 ## Control center
 
 The landing page at [http://localhost:8000](http://localhost:8000) is the
-control center for the platform:
+operational control center for the platform — the pipeline is run from here,
+not just observed:
 
 - **Service Status** — green/yellow/red health for PostgreSQL, pgvector, and the API.
-- **Pipeline Status** — progress across the five processing stages (placeholders
-  until each phase lands) plus headline counts.
+- **Pipeline stage cards** — one card per stage (Data Ingestion, Conversation
+  Understanding, Knowledge Base, Anomaly Detection, Resolution Assistant)
+  showing its status, prerequisites, outputs, and last execution, with a
+  **Run** / **Run Again** / **Open** action. Stages whose prerequisites are
+  unmet are disabled and explain why; stages from future phases are disabled
+  with their planned phase.
+- **Run Remaining Pipeline** — one click executes every incomplete stage in
+  dependency order, skipping completed stages (completion is derived from the
+  data, so nothing reruns unnecessarily) and stopping cleanly at the first
+  blocked or not-yet-implemented stage.
+- **AI onboarding** — if `GOOGLE_API_KEY` is missing, the Enable AI
+  Capabilities card accepts a key via a password-style input and saves it to
+  your local `.env` (never echoed back); AI-stage prerequisites flip to met
+  immediately.
 - **Quick Actions / Links** — jump to the API docs, the database UI, and more.
+
+The CLI, the REST API, and the landing page all drive the same orchestration
+layer — `app ingest` and the Ingestion card's Run button execute the same code.
 
 Endpoints:
 
@@ -64,8 +82,11 @@ Endpoints:
 | `/` | Control-center landing page |
 | `/docs` | Swagger UI |
 | `/health` | Machine health probe (JSON) |
-| `/api/status` | Service + pipeline status (backs the landing page) |
+| `/api/status` | Services, AI, stage cards, job state, metrics (backs the landing page) |
+| `POST /api/pipeline/run` | Run every incomplete pipeline stage in dependency order |
+| `POST /api/pipeline/{stage}/run` | Run a single pipeline stage in the background |
 | `/api/config` | Non-secret configuration (secrets reported only as set/unset) |
+| `POST /api/config/google-key` | Save the Google AI Studio key from the onboarding card |
 | `http://localhost:8080` | Adminer database UI (auto-login to dev database `cx`) |
 
 ### Lower-level targets
@@ -105,6 +126,7 @@ data/raw/            # place sample_tickets_v6.json here (git-ignored)
 | `up` / `down` | Start / stop PostgreSQL + pgvector |
 | `db-reset` | Recreate the database (drops the volume) |
 | `db-health` | Check DB connectivity + pgvector |
+| `db-migrate` | Apply database migrations |
 | `fmt` | Format with Ruff |
 | `lint` / `lint-fix` | Lint (and auto-fix) with Ruff |
 | `typecheck` | Type-check with mypy (strict) |
@@ -112,17 +134,21 @@ data/raw/            # place sample_tickets_v6.json here (git-ignored)
 | `check` | `lint` + `typecheck` + `test` (CI gate) |
 | `serve` | Run the FastAPI service |
 | `clean` | Remove caches and build artifacts |
-| `ingest` / `understand` / `analyze` / `build-kb` / `chat` / `pipeline` | Stage passthroughs (Phase 2–8 stubs) |
+| `ingest` / `stats` / `pipeline` | Import the dataset / show ingestion stats / run remaining stages |
+| `understand` / `analyze` / `build-kb` / `chat` | Stage passthroughs (stubs until Phases 3–6) |
 
 ## CLI (`app`)
 
 ```bash
 app --help
 app version
-app db health
+app db health | app db upgrade
 app serve
+app ingest         # import the dataset (idempotent; applies migrations first)
+app stats          # ingestion statistics — verifies the import
+app pipeline       # run every incomplete pipeline stage in dependency order
 # Stubs until their phase:
-app ingest | app understand | app analyze | app build-kb | app chat | app pipeline
+app understand | app analyze | app build-kb | app chat
 ```
 
 ## Configuration

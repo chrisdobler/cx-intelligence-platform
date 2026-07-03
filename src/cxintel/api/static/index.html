@@ -82,12 +82,43 @@
     .key-msg.ok { color: var(--green); }
     .key-msg.err { color: var(--red); }
 
-    /* Pipeline */
-    .stage { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
-    .stage .mark { width: 20px; text-align: center; font-size: 15px; }
-    .stage.done .mark { color: var(--green); }
-    .stage.pending .mark { color: var(--grey); }
-    .stage.pending .label { color: var(--muted); }
+    /* Pipeline control center */
+    .pipeline-head .head-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .pipeline-head .name { font-weight: 600; }
+    .pipeline-head .detail { color: var(--muted); font-size: 13px; }
+    .pipeline-head .detail.err { color: var(--red); }
+    .stage-num {
+      display: inline-flex; align-items: center; justify-content: center; flex: none;
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
+    }
+    .stage-num.done { background: var(--green); }
+    .flow {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+      margin-top: 12px; font-size: 13px; color: var(--muted);
+    }
+    .flow .flow-item { display: inline-flex; align-items: center; gap: 6px; }
+    .flow .arrow { color: var(--grey); }
+    .btn {
+      font: inherit; font-weight: 600; padding: 8px 14px; border: 1px solid var(--border);
+      border-radius: 8px; background: var(--card); color: var(--text); cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn:disabled { opacity: .55; cursor: default; }
+    .stage-card { display: flex; flex-direction: column; gap: 8px; }
+    .stage-head { display: flex; align-items: center; gap: 10px; }
+    .stage-head .name { font-weight: 600; flex: 1; }
+    .stage-head .when { color: var(--muted); font-size: 12px; }
+    .stage-card .desc { margin: 0; color: var(--muted); font-size: 13px; }
+    .stage-card .produces { margin: 0; color: var(--muted); font-size: 12.5px; }
+    .prereqs { list-style: none; margin: 0; padding: 0; font-size: 12.5px; }
+    .prereqs li { padding: 1px 0; }
+    .prereqs li.met { color: var(--muted); }
+    .prereqs li.unmet { color: var(--yellow); }
+    .prereqs .mark { display: inline-block; width: 16px; }
+    .stage-card .foot { display: flex; align-items: center; gap: 10px; margin-top: auto; }
+    .stage-card .reason { color: var(--muted); font-size: 12.5px; }
 
     /* Metrics */
     .metric .value { font-size: 24px; font-weight: 700; }
@@ -108,11 +139,6 @@
     .action .s { color: var(--muted); font-size: 13px; }
     .action.soon { opacity: .6; cursor: default; }
     .action.soon:hover { border-color: var(--border); box-shadow: none; }
-    .action .cmd {
-      display: none; margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 12.5px; background: #0f172a; color: #e2e8f0; padding: 6px 8px; border-radius: 6px;
-    }
-    .action.revealed .cmd { display: block; }
 
     /* Quick links */
     .links { display: flex; flex-wrap: wrap; gap: 10px 22px; }
@@ -145,26 +171,26 @@
     </section>
 
     <section>
-      <h2>Pipeline Status</h2>
-      <div class="card">
-        <div id="pipeline"><div class="stage pending"><span class="mark">○</span><span class="label">Loading…</span></div></div>
-        <div class="grid cols-2" id="metrics" style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;"></div>
+      <h2>Pipeline</h2>
+      <div class="card pipeline-head">
+        <div class="head-row">
+          <div>
+            <span class="name">Pipeline control</span><br>
+            <span class="detail" id="job-line">Loading…</span>
+          </div>
+          <button class="btn primary" id="run-remaining" disabled>Run Remaining Pipeline</button>
+        </div>
+        <div class="flow" id="stage-flow"></div>
+      </div>
+      <div class="grid cols-2" id="stage-cards" style="margin-top:12px;"></div>
+      <div class="card" style="margin-top:12px;">
+        <div class="grid cols-2" id="metrics"></div>
       </div>
     </section>
 
     <section>
       <h2>Quick Actions</h2>
       <div class="actions">
-        <button class="action" type="button" data-cmd="make pipeline">
-          <span class="t">Run Pipeline</span>
-          <span class="s">Run the full ingest → understand → build-kb pipeline</span>
-          <span class="cmd"></span>
-        </button>
-        <button class="action" type="button" data-cmd="make chat">
-          <span class="t">Open Chat</span>
-          <span class="s">Interactive Resolution Assistant (CLI)</span>
-          <span class="cmd"></span>
-        </button>
         <a class="action" href="/docs">
           <span class="t">Open API Documentation</span>
           <span class="s">Swagger UI for the HTTP API</span>
@@ -197,13 +223,6 @@
     const adminerUrl = `${location.protocol}//${location.hostname}:8080`;
     document.getElementById("action-db").href = adminerUrl;
     document.getElementById("link-db").href = adminerUrl;
-
-    // Quick actions that map to CLI commands: reveal the command to run.
-    for (const btn of document.querySelectorAll(".action[data-cmd]")) {
-      const cmd = btn.getAttribute("data-cmd");
-      btn.querySelector(".cmd").textContent = `$ ${cmd}`;
-      btn.addEventListener("click", () => btn.classList.toggle("revealed"));
-    }
 
     const fmtNum = (v) => (v === null || v === undefined) ? "—" : v.toLocaleString();
 
@@ -283,15 +302,108 @@
       button.disabled = false;
     }
 
-    function renderPipeline(stages) {
-      document.getElementById("pipeline").innerHTML = stages.map((st) => {
-        const done = st.state === "done";
-        return `<div class="stage ${done ? "done" : "pending"}">
-          <span class="mark">${done ? "✔" : "○"}</span>
-          <span class="label">${st.label}</span>
+    const ACTION_LABELS = { run: "Run", run_again: "Run Again", open: "Open" };
+
+    function fmtLastRun(lr) {
+      if (!lr) return "last run: —";
+      const when = new Date(lr.finished_at).toLocaleString();
+      return `last run: ${when} (${Math.round(lr.duration_seconds)}s)${lr.ok ? "" : " — failed"}`;
+    }
+
+    function stageDisabledReason(st) {
+      if (!st.implemented) return `Not yet implemented — planned for ${st.planned_phase}.`;
+      const unmet = st.prerequisites.filter((p) => !p.met);
+      if (unmet.length) return unmet.map((p) => p.detail || p.label).join(" ");
+      return null;
+    }
+
+    function renderStageCards(stages, job) {
+      const busy = job && job.state === "running";
+      const badge = (st, i) =>
+        `<span class="stage-num ${st.complete ? "done" : ""}">${i + 1}</span>`;
+      document.getElementById("stage-flow").innerHTML = stages.map((st, i) =>
+        `<span class="flow-item">${badge(st, i)}${st.label}</span>`
+      ).join(`<span class="arrow">→</span>`);
+      const el = document.getElementById("stage-cards");
+      el.innerHTML = stages.map((st, i) => {
+        const dot = st.complete ? "ok" : (st.runnable ? "degraded" : "");
+        const prereqs = st.prerequisites.map((p) =>
+          `<li class="${p.met ? "met" : "unmet"}"><span class="mark">${p.met ? "✔" : "✕"}</span>${p.label}${!p.met && p.detail ? ` — ${p.detail}` : ""}</li>`
+        ).join("");
+        const reason = stageDisabledReason(st);
+        const runnableAction = st.action === "open" ? Boolean(st.open_url) : st.runnable;
+        const disabled = busy || !runnableAction;
+        const button = st.action === "open" && st.open_url && !disabled
+          ? `<a class="btn" href="${st.open_url}">Open</a>`
+          : `<button class="btn" data-stage="${st.key}" data-action="${st.action}" ${disabled ? "disabled" : ""}>${ACTION_LABELS[st.action] ?? "Run"}</button>`;
+        return `<div class="card stage-card">
+          <div class="stage-head">
+            ${badge(st, i)}
+            <span class="dot ${dot}"></span>
+            <span class="name">${st.label}</span>
+            <span class="when">${fmtLastRun(st.last_run)}</span>
+          </div>
+          <p class="desc">${st.description}</p>
+          <ul class="prereqs">${prereqs}</ul>
+          <p class="produces">Produces: ${st.outputs.join(", ")}</p>
+          <div class="foot">${button}${reason ? `<span class="reason">${reason}</span>` : ""}</div>
         </div>`;
       }).join("");
+      for (const btn of el.querySelectorAll("button[data-stage]")) {
+        btn.addEventListener("click", () => runStage(btn.getAttribute("data-stage")));
+      }
     }
+
+    function renderJob(job, stages) {
+      const line = document.getElementById("job-line");
+      const runBtn = document.getElementById("run-remaining");
+      const busy = job && job.state === "running";
+      const anyRunnable = stages.some((st) => st.runnable && !st.complete);
+      runBtn.disabled = busy;
+      line.className = "detail";
+      if (!job) {
+        line.textContent = anyRunnable
+          ? "Idle — stages are waiting to run."
+          : "Idle.";
+      } else if (job.state === "running") {
+        line.textContent = `Running ${job.target} — ${job.progress}`;
+      } else if (job.state === "failed") {
+        line.className = "detail err";
+        line.textContent = `Failed (${job.target}): ${job.error}`;
+      } else {
+        line.textContent = job.message ?? "Finished.";
+      }
+    }
+
+    let pollTimer = null;
+    function startPolling() {
+      if (!pollTimer) pollTimer = setInterval(load, 2000);
+    }
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    async function postRun(url) {
+      try {
+        const res = await fetch(url, { method: "POST" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          const line = document.getElementById("job-line");
+          line.className = "detail err";
+          line.textContent = typeof data.detail === "string"
+            ? data.detail : `Could not start (${res.status}).`;
+          return;
+        }
+        startPolling();
+        await load();
+      } catch (e) {
+        document.getElementById("job-line").textContent = "Could not reach the API.";
+      }
+    }
+
+    const runStage = (key) => postRun(`/api/pipeline/${key}/run`);
+    document.getElementById("run-remaining").addEventListener("click", () =>
+      postRun("/api/pipeline/run"));
 
     function renderMetrics(m) {
       const rows = [
@@ -311,8 +423,10 @@
         const data = await res.json();
         renderServices(data.services, true);
         renderAI(data.ai);
-        renderPipeline(data.pipeline);
+        renderStageCards(data.pipeline, data.job);
+        renderJob(data.job, data.pipeline);
         renderMetrics(data.metrics);
+        if (!data.job || data.job.state !== "running") stopPolling();
       } catch (e) {
         document.getElementById("services").innerHTML =
           `<div class="service"><span class="dot down"></span>

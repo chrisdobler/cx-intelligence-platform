@@ -19,6 +19,9 @@ from pydantic import BaseModel, Field
 
 from ..config import get_settings
 from ..db import check_health
+from ..pipeline.jobs import TRACKER, Job
+from ..pipeline.orchestrator import LastRun, StageStatus, stage_statuses
+from ..pipeline.stages import Prerequisite, StageKind
 
 AI_SETUP_URL = "https://aistudio.google.com/apikey"
 
@@ -47,11 +50,22 @@ class ServiceStatus(BaseModel):
 
 
 class PipelineStage(BaseModel):
-    """One stage of the processing pipeline, rendered as ✔ / ○."""
+    """One stage of the processing pipeline — a full control-center card."""
 
     key: str
     label: str
     state: StageState
+    description: str
+    kind: StageKind
+    implemented: bool
+    planned_phase: str | None
+    complete: bool
+    runnable: bool
+    prerequisites: list[Prerequisite]
+    outputs: list[str]
+    last_run: LastRun | None
+    open_url: str | None
+    action: str  # "run" | "run_again" | "open" | "none"
 
 
 class Metrics(BaseModel):
@@ -79,6 +93,7 @@ class PlatformStatus(BaseModel):
     ai: AIStatus
     pipeline: list[PipelineStage] = Field(default_factory=list)
     metrics: Metrics = Field(default_factory=Metrics)
+    job: Job | None = None
 
 
 def _ingest_metrics() -> Metrics:
@@ -97,30 +112,35 @@ def _ingest_metrics() -> Metrics:
         return Metrics()
 
 
-def _pipeline_stages(ingested: bool) -> list[PipelineStage]:
-    """The pipeline stages shown on the control center.
+def _stage_action(status: StageStatus) -> str:
+    """The card's primary action, computed server-side so the page stays dumb."""
+    if status.kind is StageKind.INTERACTIVE:
+        return "open"
+    if not status.implemented:
+        return "run"  # rendered disabled with the planned-phase reason
+    return "run_again" if status.complete else "run"
 
-    Each stage flips to ``done`` once its phase has produced data; only
-    ingestion (Phase 2) has a real check so far.
-    """
+
+def _pipeline_stages() -> list[PipelineStage]:
+    """The stage cards shown on the control center, from the orchestrator."""
     return [
         PipelineStage(
-            key="ingest",
-            label="Dataset Imported",
-            state=StageState.DONE if ingested else StageState.PENDING,
-        ),
-        PipelineStage(
-            key="understand",
-            label="Conversation Understanding",
-            state=StageState.PENDING,
-        ),
-        PipelineStage(key="knowledge_base", label="Knowledge Base", state=StageState.PENDING),
-        PipelineStage(key="anomaly", label="Anomaly Detection", state=StageState.PENDING),
-        PipelineStage(
-            key="resolution_assistant",
-            label="Resolution Assistant",
-            state=StageState.PENDING,
-        ),
+            key=s.key,
+            label=s.label,
+            state=StageState.DONE if s.complete else StageState.PENDING,
+            description=s.description,
+            kind=s.kind,
+            implemented=s.implemented,
+            planned_phase=s.planned_phase,
+            complete=s.complete,
+            runnable=s.runnable,
+            prerequisites=s.prerequisites,
+            outputs=s.outputs,
+            last_run=s.last_run,
+            open_url=s.open_url,
+            action=_stage_action(s),
+        )
+        for s in stage_statuses()
     ]
 
 
@@ -163,10 +183,10 @@ def build_status() -> PlatformStatus:
         setup_url=AI_SETUP_URL,
     )
 
-    metrics = _ingest_metrics()
     return PlatformStatus(
         services=[postgres, pgvector, api],
         ai=ai,
-        pipeline=_pipeline_stages(ingested=bool(metrics.imported_conversations)),
-        metrics=metrics,
+        pipeline=_pipeline_stages(),
+        metrics=_ingest_metrics(),
+        job=TRACKER.current(),
     )
