@@ -435,3 +435,41 @@ taxonomy over time.
 
 This separation allows taxonomy evolution without coupling it to prompt
 behavior or a specific LLM provider.
+
+---
+
+# ADR-012 — Multi-Signal Anomaly Detection
+
+## Decision
+
+Treat anomalies as the result of multiple independent operational signals
+rather than a single threshold.
+
+Version 1 evaluates:
+
+- volume spikes
+- novel issue categories
+- severity drift
+- resolution drift
+
+## Reasoning
+
+Operational issues do not always manifest as simple increases in volume.
+
+A previously unseen issue category or a dramatic change in support outcomes can
+be equally important despite relatively low frequency.
+
+Representing anomalies as collections of signals produces explanations rather
+than opaque scores.
+
+## Alternatives Considered
+
+- Percentage threshold only
+- Statistical outlier detection only
+- LLM-generated anomaly detection
+
+## Tradeoffs
+
+This approach introduces additional rules but produces deterministic,
+explainable anomalies while keeping the detection engine independent of the
+LLM.

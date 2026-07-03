@@ -143,15 +143,27 @@ Responsibilities:
 
 The LLM acts as an information extraction engine.
 
-Expected structured outputs include:
+Each conversation is interpreted whole, exactly once, into the canonical
+Structured Conversation Object (Version 1, frozen — see
+`docs/PHASE3-UNDERSTANDING.md`), containing:
 
-- conversation summary
-- primary issue
-- secondary issues
-- severity
-- products involved
-- resolution summary
-- confidence
+- conversation summaries (short + detailed)
+- an `issues[]` array — zero, one, or many issues, each with canonical name,
+  the customer's verbatim description, severity, confidence, impact, product,
+  symptoms, catalog-match result, and per-issue resolution state
+- the overall resolution (type, actions, replacement flag)
+- whole-conversation signals (language, emotion, follow-up, confidence)
+
+The Pydantic `StructuredConversation` model owns the structure end to end:
+it generates the provider's native structured-output schema, validates every
+response (invalid output is retried and never persisted), types the
+application code, and is persisted unchanged to
+`ConversationAnalysis.analysis_json`. Issues are projected 1:1 into
+`conversation_issues`, and the issue catalog is derived from the Day-1
+baseline (Days 2–3 normalize against it; unmatched issues surface as
+candidate novel issues for anomaly detection). Within a day, a small worker
+pool bounds wall-clock time — day boundaries stay strict barriers, so outputs
+are identical to sequential processing.
 
 ## 3. Structured Conversation Store
 

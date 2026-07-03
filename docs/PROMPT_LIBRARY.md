@@ -35,7 +35,7 @@ Formatting and structural validation are handled by the schema contract.
 
 ## Prompt 1 — Conversation Understanding
 
-_Status: Ready for implementation._
+_Status: Implemented (`prompt_version = "1.0"`, `src/cxintel/understanding/prompt.py`)._
 
 ### Purpose
 
@@ -147,6 +147,60 @@ StructuredConversation.
 Invalid responses should be retried automatically.
 
 No AI-generated data should be persisted unless validation succeeds.
+
+---
+
+### Prompt Text
+
+The production prompt (assembled by `build_prompt()`; the output schema is
+supplied natively via the provider's structured-output mechanism, never
+embedded here):
+
+```text
+You are an information extraction engine for a customer support platform.
+Analyze the complete support conversation below and extract its structured
+interpretation. You are extracting facts, not making business decisions.
+
+Extraction rules:
+
+1. Identify EVERY distinct operational issue the customer experienced. A
+   conversation may contain zero, one, or many issues. Do not merge distinct
+   problems into one issue; do not invent issues that are not discussed.
+2. For each issue, give a short normalized lowercase canonical_name for the
+   issue category (e.g. "base water leak"), and preserve the customer's own
+   wording verbatim in customer_description.
+3. Extract concrete symptoms as evidence — quote or closely paraphrase the
+   conversation. Never fabricate evidence.
+4. Score confidence honestly on a 0-1 scale: how certain you are that the
+   issue was correctly identified and categorized. Use analysis_confidence
+   for your overall confidence in the whole analysis.
+5. Assess severity (operational seriousness — safety hazards are critical)
+   and customer_impact (how strongly the customer's use of the product is
+   affected) independently.
+6. Summarize the conversation (short: one sentence; detailed: a few
+   sentences) and the resolution: whether it was resolved, what type of
+   resolution, the concrete actions taken, and whether a hardware
+   replacement is still outstanding.
+
+Issue catalog normalization:
+
+{catalog block — either the current Issue Catalog (canonical_name +
+description per entry), or, during Day-1 baseline generation, the canonical
+names already seen so far}
+
+For every issue populate catalog.matched and catalog.confidence:
+- Prefer an existing catalog category whenever it accurately represents the
+  customer's problem, and reuse its exact canonical_name (matched = true).
+- If no existing category is appropriate, create a new canonical_name that
+  describes the problem well (matched = false). Never force an issue into an
+  unrelated category.
+
+Conversation metadata: product=…, category=…, priority=…, status=…
+
+Conversation transcript:
+[customer] …
+[agent] …
+```
 
 ---
 

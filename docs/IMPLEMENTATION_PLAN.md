@@ -51,6 +51,17 @@ All conversations are available in PostgreSQL.
 
 # Phase 3 — Conversation Understanding
 
+> **Status: delivered.** The `StructuredConversation` Pydantic hierarchy,
+> Google AI Studio provider (native structured output, validation retries),
+> Prompt #1, `ConversationIssue` projection, and Day-1 issue catalog are
+> implemented, integrated with the CLI (`app understand [--full]`), the REST
+> API, and the control center. One deliberate refinement: conversations are
+> still processed whole and exactly once, but within a day a small worker
+> pool (default 8) runs extractions concurrently — day boundaries remain
+> strict barriers, so outputs are identical to sequential processing. The
+> stage exposes explicit **Run Sample (100)** and **Run Full Dataset**
+> actions; runs are resumable (already-analyzed conversations are skipped).
+
 ## Objectives
 
 Build an LLM extraction pipeline that produces the canonical
@@ -89,6 +100,11 @@ evaluation, and future AI capabilities.
 ---
 
 # Phase 4 — Anomaly Detection
+
+> Status: pending.
+
+> This phase consumes ConversationIssue and IssueCatalog to produce
+> canonical anomaly artifacts. Raw conversations are not reparsed.
 
 ## Objectives
 
