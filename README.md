@@ -7,14 +7,15 @@ retrieval-augmented generation (RAG).
 - **Design:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - **Plan / status:** [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
 
-> **Status: Phase 3 (Conversation Understanding) complete.**
-> The dataset ingests idempotently, and Gemini extracts the canonical
-> Structured Conversation Object for every conversation — persisted to
-> `ConversationAnalysis`, projected into `ConversationIssue` rows, with the
-> issue catalog derived from the Day-1 baseline. Every pipeline stage is an
-> independent job runnable from the landing page, the CLI, or the REST API.
-> The remaining AI stages (anomaly detection, knowledge base, resolution
-> assistant) land in Phases 4–6. See the plan for the phase roadmap.
+> **Status: Phase 4 (Anomaly Detection) complete.**
+> The dataset ingests idempotently, Gemini extracts the canonical Structured
+> Conversation Object per conversation (issue catalog derived from the Day-1
+> baseline), and a deterministic multi-signal rules engine detects anomalies
+> — volume spikes, novel issues, severity drift, resolution drift — with
+> Slack alerts and an anomaly report generated from the canonical anomalies.
+> Every pipeline stage is an independent job runnable from the landing page,
+> the CLI, or the REST API. The remaining AI stages (knowledge base,
+> resolution assistant) land in Phases 5–6. See the plan for the roadmap.
 
 ## Prerequisites
 
@@ -82,7 +83,8 @@ not just observed:
   Capabilities card accepts a key via a password-style input and saves it to
   your local `.env` (never echoed back); AI-stage prerequisites flip to met
   immediately.
-- **Quick Actions / Links** — jump to the API docs, the database UI, and more.
+- **Quick Actions / Links** — jump to the API docs, the database UI, and the
+  anomaly report (rendered live from the detected anomalies).
 
 The CLI, the REST API, and the landing page all drive the same orchestration
 layer — `app ingest` and the Ingestion card's Run button execute the same code.
@@ -98,6 +100,8 @@ Endpoints:
 | `POST /api/pipeline/run` | Run every incomplete pipeline stage in dependency order |
 | `POST /api/pipeline/{stage}/run` | Run a single pipeline stage in the background |
 | `GET /api/pipeline/runs` | Pipeline audit trail — recent stage runs, newest first |
+| `GET /api/anomalies` | Detected anomalies (canonical artifact: signals, metrics, actions) |
+| `GET /api/anomalies/report` | The anomaly report, rendered from persisted anomalies (markdown) |
 | `/api/config` | Non-secret configuration (secrets reported only as set/unset) |
 | `POST /api/config/google-key` | Save the Google AI Studio key from the onboarding card |
 | `http://localhost:8080` | Adminer database UI (auto-login to dev database `cx`) |
@@ -121,7 +125,7 @@ src/cxintel/
   ingestion/         # Phase 2  — dataset loading + idempotent import
   llm.py             # provider abstraction (Google AI Studio, native structured output)
   understanding/     # Phase 3  — StructuredConversation schema, Prompt #1, service
-  anomaly/           # Phase 4  (placeholder)
+  anomaly/           # Phase 4  — deterministic detector, Prompt #3, service, report
   knowledge_base/    # Phase 5  (placeholder)
   resolution_assistant/ # Phase 6 (placeholder)
 tests/               # foundation + API smoke tests
@@ -150,7 +154,9 @@ data/raw/            # place sample_tickets_v6.json here (git-ignored)
 | `clean` | Remove caches and build artifacts |
 | `ingest` / `stats` / `pipeline` | Import the dataset / show ingestion stats / run remaining stages |
 | `understand` | Run conversation understanding on a sample of 100 (see `app understand --full`) |
-| `analyze` / `build-kb` / `chat` | Stage passthroughs (stubs until Phases 4–6) |
+| `bottlenecks` | Show slow per-conversation LLM observations from understanding runs |
+| `analyze` | Run deterministic anomaly detection vs the Day-1 baseline |
+| `build-kb` / `chat` | Stage passthroughs (stubs until Phases 5–6) |
 
 ## CLI (`app`)
 
@@ -163,10 +169,13 @@ app ingest         # import the dataset (idempotent; applies migrations first)
 app understand     # conversation understanding — sample of 100 (resumable)
 app understand --full  # process every remaining conversation (~10k LLM calls)
 app stats          # ingestion statistics — verifies the import
+app analyze        # deterministic anomaly detection vs the Day-1 baseline
+app report         # print the anomaly report (from persisted anomalies)
 app pipeline       # run every incomplete pipeline stage in dependency order
 app runs           # pipeline audit trail — recent stage runs, newest first
+app bottlenecks --sort llm_seconds  # slowest LLM observations by phase timing
 # Stubs until their phase:
-app analyze | app build-kb | app chat
+app build-kb | app chat
 ```
 
 ## Configuration

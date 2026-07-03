@@ -123,8 +123,12 @@ how long it took, and how it ended (summary on success, error on failure). A
 `running` row is written before the stage executes, so a crashed process
 leaves evidence rather than vanishing from history. This audit trail feeds the
 stage cards' last-run display, the Recent Runs panel, `GET
-/api/pipeline/runs`, and the `app runs` CLI command — and it is the anchor for
-per-AI-call observability (model, latency, token usage) planned in Phase 7.
+/api/pipeline/runs`, and the `app runs` CLI command. Phase 3 LLM calls also
+write `llm_call_observations` rows linked to the active run, exposing
+per-conversation load, prompt-build, Gemini, persistence, retry, and size
+signals through `GET /api/pipeline/llm-observations` and `app bottlenecks`.
+Token-usage observability remains planned for the broader Phase 7 evaluation
+work.
 
 ---
 
@@ -175,20 +179,29 @@ A single datastore keeps deployment simple while satisfying the scale of this pr
 
 ## 4. Anomaly Detection
 
-Aggregate issue counts across days.
+A **deterministic multi-signal rules engine** (ADR-012) over the relational
+projections — the LLM plays no part in detection, and raw conversations are
+never reparsed. Each post-baseline day's per-issue statistics (one grouped
+SQL query) are compared against Day 1 using four independent signals:
 
-Identify:
+- **volume spike** — frequency rises significantly vs the baseline
+- **novel issue** — a category absent from the Day-1 issue catalog
+  (anomalous regardless of frequency)
+- **severity drift** — the high/critical share changes significantly
+- **resolution drift** — the resolved share drops significantly
 
-- new issue clusters
-- spikes
-- accelerating trends
-- resolving issues
+Signals for the same (day, issue) merge into one **canonical Anomaly** —
+issue, derived severity, the signals that fired, the supporting metrics, a
+deterministic summary, and a recommended action — persisted in `anomalies`
+and regenerated on every run (derived data). Detection thresholds are
+explicit settings, so every anomaly explains *why* it was detected rather
+than reporting an opaque score.
 
-Generate:
-
-- severity
-- magnitude
-- Slack alert message
+Slack alerts and the anomaly report **consume anomalies**; they never analyze
+operational data themselves. Prompt 3 converts one detected anomaly into a
+concise Slack message (deterministic fallback if the LLM fails), delivered to
+`SLACK_WEBHOOK_URL` when configured. The report is written to
+`reports/anomaly-report.md` and served from the control center.
 
 ## 5. Knowledge Base
 

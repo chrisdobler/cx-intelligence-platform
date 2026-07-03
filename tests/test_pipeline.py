@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import pytest
@@ -55,7 +56,13 @@ class FakeStage(PipelineStage):
     def prerequisites(self, session: Session | None) -> list[Prerequisite]:
         return [Prerequisite(label="ready", met=self._prereqs_met, detail=None)]
 
-    def run(self, session_factory: Any, progress: Any, option: str | None = None) -> str:
+    def run(
+        self,
+        session_factory: Any,
+        progress: Any,
+        option: str | None = None,
+        run_id: uuid.UUID | None = None,
+    ) -> str:
         if not self.implemented or self.kind is StageKind.INTERACTIVE:
             raise StageNotRunnableError(f"{self.key} is not runnable")
         self.run_calls += 1
@@ -106,6 +113,8 @@ def test_real_registry_has_five_stages_in_order() -> None:
     assert by_key["ingest"].implemented is True
     assert by_key["understand"].implemented is True  # Phase 3 delivered
     assert by_key["understand"].planned_phase is None
+    assert by_key["anomaly"].implemented is True  # Phase 4 delivered
+    assert by_key["anomaly"].planned_phase is None
     assert by_key["knowledge_base"].implemented is False
     assert by_key["resolution_assistant"].kind == StageKind.INTERACTIVE
     # Understanding exposes the two explicit run options (sample is default).

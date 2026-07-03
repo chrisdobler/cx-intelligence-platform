@@ -19,20 +19,29 @@ persisted (nothing is written for it at all).
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..llm import LLMExtractionError, LLMProvider
-from ..models import Conversation, ConversationAnalysis, ConversationIssue, IssueCatalogEntry
+from ..models import (
+    Conversation,
+    ConversationAnalysis,
+    ConversationIssue,
+    IssueCatalogEntry,
+    LLMCallObservation,
+)
 from ..pipeline.progress import ProgressCallback, ProgressReporter
 from ..repositories import (
     ConversationIssueRepository,
     ConversationRepository,
     IssueCatalogRepository,
+    LLMCallObservationRepository,
 )
 from .prompt import PROMPT_VERSION, build_prompt
 from .schema import StructuredConversation
@@ -54,15 +63,52 @@ class UnderstandingResult:
         self.skipped_existing = 0
         self.failed = 0
         self.catalog_entries: int | None = None
+        self.observed_calls = 0
+        self.total_seconds = 0.0
+        self.llm_seconds = 0.0
+        self.retry_count = 0
+        self.slowest_conversation: str | None = None
+        self.slowest_seconds = 0.0
 
     def summary(self) -> str:
         parts = [
             f"Analyzed {self.analyzed} conversations "
             f"({self.failed} failed, {self.skipped_existing} already analyzed)."
         ]
+        if self.observed_calls:
+            avg_total = self.total_seconds / self.observed_calls
+            avg_llm = self.llm_seconds / self.observed_calls
+            parts.append(
+                f"Timing: avg {avg_total:.2f}s total, {avg_llm:.2f}s LLM, "
+                f"{self.retry_count} retries"
+                + (
+                    f", slowest {self.slowest_conversation} {self.slowest_seconds:.2f}s."
+                    if self.slowest_conversation
+                    else "."
+                )
+            )
         if self.catalog_entries is not None:
             parts.append(f"Issue catalog: {self.catalog_entries} entries.")
         return " ".join(parts)
+
+    def observe(self, timing: ObservationTiming) -> None:
+        self.observed_calls += 1
+        self.total_seconds += timing.total_seconds
+        self.llm_seconds += timing.llm_seconds
+        self.retry_count += timing.retry_count
+        if timing.total_seconds >= self.slowest_seconds:
+            self.slowest_seconds = timing.total_seconds
+            self.slowest_conversation = timing.item
+
+
+@dataclass(frozen=True)
+class ObservationTiming:
+    """Small aggregate copied into the run summary."""
+
+    item: str
+    total_seconds: float
+    llm_seconds: float
+    retry_count: int
 
 
 class UnderstandingService:
@@ -73,6 +119,7 @@ class UnderstandingService:
         session_factory: sessionmaker[Session],
         provider: LLMProvider,
         concurrency: int | None = None,
+        pipeline_run_id: uuid.UUID | None = None,
     ) -> None:
         from ..config import get_settings
 
@@ -81,6 +128,7 @@ class UnderstandingService:
         self._provider = provider
         self._concurrency = concurrency or settings.understand_concurrency
         self._model = settings.llm_model
+        self._pipeline_run_id = pipeline_run_id
         self._counter_lock = Lock()
 
     def run(
@@ -171,7 +219,7 @@ class UnderstandingService:
             reporter.set_current(item, message=f"Day {day}: analyzing {item}…")
             failed = False
             try:
-                self._process_one(conversation_id, day, catalog_context, reporter, item)
+                self._process_one(conversation_id, day, catalog_context, reporter, item, result)
                 with self._counter_lock:
                     result.analyzed += 1
             except LLMExtractionError as exc:
@@ -206,12 +254,29 @@ class UnderstandingService:
         catalog_context: list[tuple[str, str]],
         reporter: ProgressReporter,
         item: str,
+        result: UnderstandingResult,
     ) -> None:
         """Extract, validate, and persist one conversation (own session)."""
+        observation_started_at = datetime.now(tz=UTC)
+        observation_started = time.perf_counter()
+        load_seconds = 0.0
+        prompt_seconds = 0.0
+        llm_seconds = 0.0
+        persist_seconds = 0.0
+        message_count = 0
+        prompt_characters = 0
+        issue_count = 0
+        retry_count = 0
+        status = "succeeded"
+        error: str | None = None
+        analysis: StructuredConversation | None = None
+
         with self._session_factory() as session:
+            phase_started = time.perf_counter()
             conversation = session.get(Conversation, conversation_id)
             assert conversation is not None  # id came from the pending query
-            messages = conversation.messages
+            messages = list(conversation.messages)
+            message_count = len(messages)
             catalog = [
                 IssueCatalogEntry(
                     canonical_name=name,
@@ -228,54 +293,125 @@ class UnderstandingService:
                 if not catalog
                 else None
             )
+            load_seconds = time.perf_counter() - phase_started
+
+            phase_started = time.perf_counter()
             prompt = build_prompt(conversation, messages, catalog, seen_names)
+            prompt_seconds = time.perf_counter() - phase_started
+            prompt_characters = len(prompt)
 
-        analysis = self._provider.extract(
-            prompt,
-            StructuredConversation,
-            on_retry=lambda attempt, _exc: reporter.retry(
-                current_item=item,
-                message=f"Retrying {item} (attempt {attempt})…",
-            ),
-        )
+        try:
+            phase_started = time.perf_counter()
 
-        now = datetime.now(tz=UTC)
-        with self._session_factory() as session:
-            session.merge(
-                ConversationAnalysis(
+            def on_retry(attempt: int, _exc: Exception) -> None:
+                nonlocal retry_count
+                retry_count += 1
+                reporter.retry(
+                    current_item=item,
+                    message=f"Retrying {item} (attempt {attempt})…",
+                )
+
+            analysis = self._provider.extract(
+                prompt,
+                StructuredConversation,
+                on_retry=on_retry,
+            )
+            llm_seconds = time.perf_counter() - phase_started
+            issue_count = len(analysis.issues)
+
+            now = datetime.now(tz=UTC)
+            with self._session_factory() as session:
+                phase_started = time.perf_counter()
+                session.merge(
+                    ConversationAnalysis(
+                        conversation_id=conversation_id,
+                        model=self._model,
+                        # Response-level version reporting arrives with Phase 7
+                        # observability; the configured model is the fallback.
+                        model_version=self._model,
+                        prompt_version=PROMPT_VERSION,
+                        processed_at=now,
+                        analysis_json=analysis.model_dump(),
+                    )
+                )
+                ConversationIssueRepository(session).replace_for_conversation(
+                    conversation_id,
+                    [
+                        ConversationIssue(
+                            id=uuid.uuid4(),
+                            conversation_id=conversation_id,
+                            canonical_name=issue.canonical_name,
+                            customer_description=issue.customer_description,
+                            severity=issue.severity,
+                            confidence=issue.confidence,
+                            customer_impact=issue.customer_impact,
+                            product=issue.product,
+                            symptoms=issue.symptoms,
+                            catalog_matched=issue.catalog.matched,
+                            catalog_confidence=issue.catalog.confidence,
+                            resolution_status=issue.resolution_status,
+                            resolution_summary=issue.resolution_summary,
+                            created_at=now,
+                        )
+                        for issue in analysis.issues
+                    ],
+                )
+                session.commit()
+                persist_seconds = time.perf_counter() - phase_started
+        except Exception as exc:
+            status = "failed"
+            error = str(exc)
+            if llm_seconds == 0.0:
+                llm_seconds = time.perf_counter() - phase_started
+            raise
+        finally:
+            total_seconds = time.perf_counter() - observation_started
+            finished_at = datetime.now(tz=UTC)
+            self._record_observation(
+                LLMCallObservation(
+                    id=uuid.uuid4(),
+                    pipeline_run_id=self._pipeline_run_id,
                     conversation_id=conversation_id,
+                    day=day,
                     model=self._model,
-                    # Response-level version reporting arrives with Phase 7
-                    # observability; the configured model is the fallback.
-                    model_version=self._model,
                     prompt_version=PROMPT_VERSION,
-                    processed_at=now,
-                    analysis_json=analysis.model_dump(),
+                    status=status,
+                    total_seconds=total_seconds,
+                    load_seconds=load_seconds,
+                    prompt_seconds=prompt_seconds,
+                    llm_seconds=llm_seconds,
+                    persist_seconds=persist_seconds,
+                    message_count=message_count,
+                    prompt_characters=prompt_characters,
+                    issue_count=issue_count,
+                    retry_count=retry_count,
+                    started_at=observation_started_at,
+                    finished_at=finished_at,
+                    error=error,
                 )
             )
-            ConversationIssueRepository(session).replace_for_conversation(
-                conversation_id,
-                [
-                    ConversationIssue(
-                        id=uuid.uuid4(),
-                        conversation_id=conversation_id,
-                        canonical_name=issue.canonical_name,
-                        customer_description=issue.customer_description,
-                        severity=issue.severity,
-                        confidence=issue.confidence,
-                        customer_impact=issue.customer_impact,
-                        product=issue.product,
-                        symptoms=issue.symptoms,
-                        catalog_matched=issue.catalog.matched,
-                        catalog_confidence=issue.catalog.confidence,
-                        resolution_status=issue.resolution_status,
-                        resolution_summary=issue.resolution_summary,
-                        created_at=now,
+            with self._counter_lock:
+                result.observe(
+                    ObservationTiming(
+                        item=item,
+                        total_seconds=total_seconds,
+                        llm_seconds=llm_seconds,
+                        retry_count=retry_count,
                     )
-                    for issue in analysis.issues
-                ],
+                )
+
+    def _record_observation(self, observation: LLMCallObservation) -> None:
+        """Persist observation data without making instrumentation a hard dependency."""
+        try:
+            with self._session_factory() as session:
+                LLMCallObservationRepository(session).add(observation)
+                session.commit()
+        except Exception as exc:
+            logger.warning(
+                "failed to record LLM observation for %s: %s",
+                observation.conversation_id,
+                exc,
             )
-            session.commit()
 
     # -- baseline catalog -----------------------------------------------------
 

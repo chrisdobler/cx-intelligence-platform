@@ -154,16 +154,60 @@ class PipelineRun(Base):
     error: Mapped[str | None] = mapped_column(Text)
 
 
+class LLMCallObservation(Base):
+    """Per-conversation LLM timing observation for bottleneck analysis."""
+
+    __tablename__ = "llm_call_observations"
+    __table_args__ = (
+        Index("ix_llm_call_observations_pipeline_run_id", "pipeline_run_id"),
+        Index("ix_llm_call_observations_conversation_id", "conversation_id"),
+        Index("ix_llm_call_observations_total_seconds", "total_seconds"),
+        Index("ix_llm_call_observations_llm_seconds", "llm_seconds"),
+        Index("ix_llm_call_observations_started_at", "started_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("pipeline_runs.id"))
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"))
+    day: Mapped[int] = mapped_column(Integer)
+    model: Mapped[str] = mapped_column(String)
+    prompt_version: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String)
+    total_seconds: Mapped[float] = mapped_column(Float)
+    load_seconds: Mapped[float] = mapped_column(Float)
+    prompt_seconds: Mapped[float] = mapped_column(Float)
+    llm_seconds: Mapped[float] = mapped_column(Float)
+    persist_seconds: Mapped[float] = mapped_column(Float)
+    message_count: Mapped[int] = mapped_column(Integer)
+    prompt_characters: Mapped[int] = mapped_column(Integer)
+    issue_count: Mapped[int] = mapped_column(Integer)
+    retry_count: Mapped[int] = mapped_column(Integer)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+
+
 class Anomaly(Base):
-    """A detected operational anomaly (Phase 4 writes these)."""
+    """A detected operational anomaly — the canonical Phase 4 artifact.
+
+    Derived data: every anomaly-detection run regenerates all rows from the
+    ``conversation_issues`` projections. ``signals`` lists every detection
+    signal that fired (ADR-012) and ``metrics`` carries the numbers behind
+    them, so each anomaly explains itself. Slack alerts and reports consume
+    these rows; they never analyze operational data independently.
+    """
 
     __tablename__ = "anomalies"
+    __table_args__ = (Index("ix_anomalies_day_issue", "day", "issue", unique=True),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     day: Mapped[int] = mapped_column(Integer, index=True)
     issue: Mapped[str] = mapped_column(String)
     severity: Mapped[str] = mapped_column(String)
-    delta: Mapped[float] = mapped_column(Float)
-    description: Mapped[str] = mapped_column(Text)
+    delta: Mapped[float] = mapped_column(Float)  # percent_change (0.0 for novel issues)
+    description: Mapped[str] = mapped_column(Text)  # human-readable summary
     slack_message: Mapped[str] = mapped_column(Text)
+    signals: Mapped[list[str]] = mapped_column(JSONB)
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    recommended_action: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

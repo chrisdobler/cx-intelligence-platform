@@ -11,11 +11,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
 from cxintel.llm import RetryCallback
-from cxintel.models import Conversation, ConversationIssue, Message
+from cxintel.models import Conversation, ConversationIssue, Message, PipelineRun
 from cxintel.repositories import (
     ConversationAnalysisRepository,
     ConversationIssueRepository,
     IssueCatalogRepository,
+    LLMCallObservationRepository,
 )
 from cxintel.understanding.prompt import PROMPT_VERSION
 from cxintel.understanding.schema import StructuredConversation
@@ -61,6 +62,24 @@ class FakeProvider:
         raise AssertionError(f"no canned analysis matches prompt: {prompt[:200]}")
 
 
+class RetryingProvider(FakeProvider):
+    """Fake provider that reports retries before returning the canned result."""
+
+    def __init__(
+        self, by_marker: dict[str, StructuredConversation | Exception], retries: int
+    ) -> None:
+        super().__init__(by_marker)
+        self.retries = retries
+
+    def extract(
+        self, prompt: str, schema: type[T], on_retry: RetryCallback | None = None
+    ) -> T:
+        for attempt in range(2, self.retries + 2):
+            if on_retry is not None:
+                on_retry(attempt, RuntimeError("try again"))
+        return super().extract(prompt, schema, on_retry)
+
+
 def seed_conversation(session: Session, external_id: str, day: int, text: str) -> uuid.UUID:
     ts = datetime(2026, 2, 24 + day, 12, 0, tzinfo=UTC)
     conv_id = uuid.uuid5(uuid.NAMESPACE_URL, external_id)
@@ -100,8 +119,30 @@ def factory(settings_on_test_db: str, migrated_engine: Any, db_session: Session)
     return sessionmaker(bind=migrated_engine, expire_on_commit=False)
 
 
-def make_service(factory: Any, provider: FakeProvider) -> UnderstandingService:
-    return UnderstandingService(factory, provider, concurrency=1)
+def make_service(
+    factory: Any, provider: FakeProvider, pipeline_run_id: uuid.UUID | None = None
+) -> UnderstandingService:
+    return UnderstandingService(factory, provider, concurrency=1, pipeline_run_id=pipeline_run_id)
+
+
+def seed_pipeline_run(session: Session) -> uuid.UUID:
+    run_id = uuid.uuid4()
+    ts = datetime(2026, 7, 3, 10, 0, tzinfo=UTC)
+    session.add(
+        PipelineRun(
+            id=run_id,
+            stage_key="understand",
+            status="running",
+            trigger="cli",
+            started_at=ts,
+            finished_at=None,
+            duration_seconds=None,
+            summary=None,
+            error=None,
+        )
+    )
+    session.commit()
+    return run_id
 
 
 def test_analysis_persisted_unchanged_with_provenance(
@@ -123,6 +164,66 @@ def test_analysis_persisted_unchanged_with_provenance(
     assert stored.model_version
     assert stored.prompt_version == PROMPT_VERSION
     assert stored.processed_at is not None
+
+
+def test_successful_extraction_records_llm_observation(
+    factory: Any, db_session: Session
+) -> None:
+    conv_id = seed_conversation(db_session, "conv_a", 1, "marker-alpha")
+    run_id = seed_pipeline_run(db_session)
+    provider = FakeProvider({"marker-alpha": analysis_for(["base water leak"])})
+
+    result = make_service(factory, provider, pipeline_run_id=run_id).run(limit=None)
+
+    observations = LLMCallObservationRepository(db_session).slowest()
+    assert len(observations) == 1
+    observation = observations[0]
+    assert result.observed_calls == 1
+    assert result.retry_count == 0
+    assert "Timing: avg" in result.summary()
+    assert observation.pipeline_run_id == run_id
+    assert observation.conversation_id == conv_id
+    assert observation.status == "succeeded"
+    assert observation.message_count == 1
+    assert observation.prompt_characters == len(provider.prompts[0])
+    assert observation.issue_count == 1
+    assert observation.total_seconds >= observation.llm_seconds >= 0
+    assert observation.load_seconds >= 0
+    assert observation.prompt_seconds >= 0
+    assert observation.persist_seconds >= 0
+
+
+def test_failed_extraction_records_observation_without_analysis(
+    factory: Any, db_session: Session
+) -> None:
+    from cxintel.llm import LLMExtractionError
+
+    conv_id = seed_conversation(db_session, "conv_a", 1, "marker-alpha")
+    provider = FakeProvider({"marker-alpha": LLMExtractionError("no valid response")})
+
+    result = make_service(factory, provider).run(limit=None)
+
+    assert result.failed == 1
+    assert ConversationAnalysisRepository(db_session).count() == 0
+    observations = LLMCallObservationRepository(db_session).slowest()
+    assert len(observations) == 1
+    assert observations[0].conversation_id == conv_id
+    assert observations[0].pipeline_run_id is None
+    assert observations[0].status == "failed"
+    assert observations[0].error is not None and "no valid response" in observations[0].error
+
+
+def test_retry_callbacks_increment_observation_retry_count(
+    factory: Any, db_session: Session
+) -> None:
+    seed_conversation(db_session, "conv_a", 1, "marker-alpha")
+    provider = RetryingProvider({"marker-alpha": analysis_for(["leak"])}, retries=2)
+
+    result = make_service(factory, provider).run(limit=None)
+
+    observations = LLMCallObservationRepository(db_session).slowest()
+    assert result.retry_count == 2
+    assert observations[0].retry_count == 2
 
 
 def test_issue_projection_one_row_per_issue(factory: Any, db_session: Session) -> None:

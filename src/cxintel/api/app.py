@@ -10,11 +10,13 @@ probe and Swagger stays at ``/docs``. The Resolution Assistant endpoints
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from .. import __version__
@@ -22,7 +24,14 @@ from ..config import get_settings, set_env_key
 from ..db import check_health
 from ..pipeline import orchestrator
 from ..pipeline.jobs import TRACKER, Job, JobBusyError
-from ..pipeline.orchestrator import RunRecord, recent_runs, run_remaining, run_stage
+from ..pipeline.orchestrator import (
+    LLMObservationRecord,
+    RunRecord,
+    llm_observations,
+    recent_runs,
+    run_remaining,
+    run_stage,
+)
 from ..pipeline.stages import StageKind
 from .status import PlatformStatus, build_status
 
@@ -98,6 +107,76 @@ def api_config() -> dict[str, object]:
 def pipeline_runs(limit: int = Query(default=20, ge=1, le=200)) -> list[RunRecord]:
     """The pipeline audit trail — recent runs, newest first ([] when the DB is down)."""
     return recent_runs(limit=limit)
+
+
+class AnomalyRecord(BaseModel):
+    """One canonical anomaly, as exposed by the API."""
+
+    issue: str
+    day: int
+    severity: str
+    signals: list[str]
+    metrics: dict[str, float | int | None]
+    summary: str
+    recommended_action: str
+    slack_message: str
+
+
+def _anomaly_rows() -> list[AnomalyRecord]:
+    from ..db import get_session_factory
+    from ..repositories import AnomalyRepository
+
+    try:
+        with get_session_factory()() as session:
+            rows = AnomalyRepository(session).all()
+    except Exception:
+        return []
+    return [
+        AnomalyRecord(
+            issue=a.issue,
+            day=a.day,
+            severity=a.severity,
+            signals=a.signals,
+            metrics=a.metrics,
+            summary=a.description,
+            recommended_action=a.recommended_action,
+            slack_message=a.slack_message,
+        )
+        for a in rows
+    ]
+
+
+@app.get("/api/anomalies")
+def api_anomalies() -> list[AnomalyRecord]:
+    """Detected anomalies (the canonical Phase 4 artifact); [] when the DB is down."""
+    return _anomaly_rows()
+
+
+@app.get("/api/anomalies/report", response_class=PlainTextResponse)
+def api_anomaly_report() -> str:
+    """The anomaly report, rendered from persisted anomalies (markdown)."""
+    from ..anomaly.reporting import render_report
+    from ..db import get_session_factory
+    from ..repositories import AnomalyRepository
+
+    try:
+        with get_session_factory()() as session:
+            return render_report(AnomalyRepository(session).all())
+    except Exception:
+        return "# Anomaly Report\n\nDatabase unavailable.\n"
+
+
+@app.get("/api/pipeline/llm-observations")
+def pipeline_llm_observations(
+    limit: int = Query(default=20, ge=1, le=200),
+    sort: str = Query(default="total_seconds"),
+    pipeline_run_id: Annotated[uuid.UUID | None, Query()] = None,
+) -> list[LLMObservationRecord]:
+    """Slowest per-conversation LLM timing observations."""
+    try:
+        return llm_observations(limit=limit, sort=sort, pipeline_run_id=pipeline_run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/pipeline/{key}/run", status_code=202)

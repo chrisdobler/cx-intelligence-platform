@@ -222,6 +222,31 @@ class RunRecord(BaseModel):
     error: str | None
 
 
+class LLMObservationRecord(BaseModel):
+    """One per-conversation LLM timing observation."""
+
+    id: uuid.UUID
+    pipeline_run_id: uuid.UUID | None
+    conversation_id: uuid.UUID
+    conversation_external_id: str | None
+    day: int
+    model: str
+    prompt_version: str
+    status: str
+    total_seconds: float
+    load_seconds: float
+    prompt_seconds: float
+    llm_seconds: float
+    persist_seconds: float
+    message_count: int
+    prompt_characters: int
+    issue_count: int
+    retry_count: int
+    started_at: datetime
+    finished_at: datetime
+    error: str | None
+
+
 def recent_runs(limit: int = 20) -> list[RunRecord]:
     """The most recent pipeline runs, newest first ([] when the DB is down).
 
@@ -260,6 +285,64 @@ def recent_runs(limit: int = 20) -> list[RunRecord]:
             error=run.error,
         )
         for run in rows
+    ]
+
+
+def llm_observations(
+    *,
+    limit: int = 20,
+    sort: str = "total_seconds",
+    pipeline_run_id: uuid.UUID | None = None,
+) -> list[LLMObservationRecord]:
+    """Slowest per-conversation LLM observations ([] when the DB is unavailable)."""
+    from ..models import Conversation
+    from ..repositories import LLM_OBSERVATION_SORT_FIELDS, LLMCallObservationRepository
+
+    if sort not in LLM_OBSERVATION_SORT_FIELDS:
+        raise ValueError(f"Unsupported LLM observation sort '{sort}'.")
+
+    session = _open_session()
+    if session is None:
+        return []
+    try:
+        observations = LLMCallObservationRepository(session).slowest(
+            limit=limit, sort=sort, pipeline_run_id=pipeline_run_id
+        )
+        labels = {
+            row.id: row.external_id
+            for row in session.query(Conversation)
+            .filter(Conversation.id.in_([o.conversation_id for o in observations]))
+            .all()
+        }
+    except Exception:
+        return []
+    finally:
+        session.close()
+
+    return [
+        LLMObservationRecord(
+            id=obs.id,
+            pipeline_run_id=obs.pipeline_run_id,
+            conversation_id=obs.conversation_id,
+            conversation_external_id=labels.get(obs.conversation_id),
+            day=obs.day,
+            model=obs.model,
+            prompt_version=obs.prompt_version,
+            status=obs.status,
+            total_seconds=obs.total_seconds,
+            load_seconds=obs.load_seconds,
+            prompt_seconds=obs.prompt_seconds,
+            llm_seconds=obs.llm_seconds,
+            persist_seconds=obs.persist_seconds,
+            message_count=obs.message_count,
+            prompt_characters=obs.prompt_characters,
+            issue_count=obs.issue_count,
+            retry_count=obs.retry_count,
+            started_at=obs.started_at,
+            finished_at=obs.finished_at,
+            error=obs.error,
+        )
+        for obs in observations
     ]
 
 
@@ -309,7 +392,7 @@ def run_stage(
     started = time.monotonic()
     run_id = _record_start(key, trigger, started_at)
     try:
-        summary = stage.run(get_session_factory(), progress, option)
+        summary = stage.run(get_session_factory(), progress, option, run_id)
     except Exception as exc:
         _record_finish(run_id, key, trigger, started_at, time.monotonic() - started, error=str(exc))
         raise

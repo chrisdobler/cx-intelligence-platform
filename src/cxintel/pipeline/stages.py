@@ -15,6 +15,7 @@ keeps working with the infrastructure down.
 
 from __future__ import annotations
 
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from enum import StrEnum
@@ -82,6 +83,7 @@ class PipelineStage(ABC):
         session_factory: sessionmaker[Session],
         progress: ProgressCallback,
         option: str | None = None,
+        run_id: uuid.UUID | None = None,
     ) -> str:
         """Execute the stage; returns a one-line human summary.
 
@@ -182,6 +184,7 @@ class IngestStage(PipelineStage):
         session_factory: sessionmaker[Session],
         progress: ProgressCallback,
         option: str | None = None,
+        run_id: uuid.UUID | None = None,
     ) -> str:
         from alembic import command
         from alembic.config import Config
@@ -252,6 +255,7 @@ class UnderstandStage(PipelineStage):
         session_factory: sessionmaker[Session],
         progress: ProgressCallback,
         option: str | None = None,
+        run_id: uuid.UUID | None = None,
     ) -> str:
         from alembic import command
         from alembic.config import Config
@@ -275,7 +279,7 @@ class UnderstandStage(PipelineStage):
 
         scope = "full dataset" if limit is None else f"sample of {limit}"
         reporter.report(message=f"Running conversation understanding ({scope})…")
-        service = UnderstandingService(session_factory, get_llm_provider())
+        service = UnderstandingService(session_factory, get_llm_provider(), pipeline_run_id=run_id)
         return service.run(limit=limit, progress=reporter).summary()
 
 
@@ -307,16 +311,17 @@ class KnowledgeBaseStage(PipelineStage):
 
 
 class AnomalyStage(PipelineStage):
-    """Phase 4 — detect emerging operational issues across days."""
+    """Phase 4 — deterministic multi-signal anomaly detection over projections."""
 
     key = "anomaly"
     label = "Anomaly Detection"
     description = (
-        "Aggregate issue counts across days to detect new clusters, spikes, and "
-        "trends, generating severity-rated Slack alerts."
+        "Deterministic rules compare each day's issue statistics against the "
+        "Day-1 baseline (volume spikes, novel issues, severity drift, resolution "
+        "drift) and produce explainable anomalies, Slack alerts, and a report."
     )
-    outputs = ("anomalies", "Slack alerts")
-    planned_phase = "Phase 4"
+    outputs = ("anomalies", "Slack alerts", "anomaly report")
+    implemented = True
 
     def is_complete(self, session: Session | None) -> bool:
         return bool(_count_or_none(session, _anomaly_count))
@@ -331,6 +336,31 @@ class AnomalyStage(PipelineStage):
             ),
             _ai_prerequisite(),
         ]
+
+    def run(
+        self,
+        session_factory: sessionmaker[Session],
+        progress: ProgressCallback,
+        option: str | None = None,
+        run_id: uuid.UUID | None = None,
+    ) -> str:
+        from alembic import command
+        from alembic.config import Config
+
+        from ..anomaly.service import AnomalyService
+        from ..llm import get_llm_provider
+
+        reporter = ProgressReporter(
+            stage_key=self.key,
+            stage_label=self.label,
+            progress=progress,
+            message="Applying database migrations…",
+        )
+        command.upgrade(Config("alembic.ini"), "head")
+
+        reporter.report(message="Running anomaly detection…")
+        service = AnomalyService(session_factory, get_llm_provider(), pipeline_run_id=run_id)
+        return service.run(progress=reporter).summary()
 
 
 class ResolutionAssistantStage(PipelineStage):

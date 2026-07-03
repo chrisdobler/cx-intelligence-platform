@@ -148,6 +148,12 @@ def test_understand_sample_and_full_flags(
     assert sample.exit_code == 0, sample.output
     assert "Analyzed 2 conversations" in sample.output
 
+    bottlenecks = runner.invoke(app, ["bottlenecks", "--sort", "llm_seconds"])
+    assert bottlenecks.exit_code == 0, bottlenecks.output
+    assert "conversation" in bottlenecks.output
+    assert "conv_0001" in bottlenecks.output
+    assert "succeeded" in bottlenecks.output
+
     # Everything already analyzed — a full run just skips.
     full = runner.invoke(app, ["understand", "--full"])
     assert full.exit_code == 0, full.output

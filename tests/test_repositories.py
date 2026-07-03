@@ -8,11 +8,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from cxintel.models import ConversationIssue, IssueCatalogEntry, PipelineRun
+from cxintel.models import ConversationIssue, IssueCatalogEntry, LLMCallObservation, PipelineRun
 from cxintel.repositories import (
+    AnomalyRepository,
     ConversationIssueRepository,
     ConversationRepository,
     IssueCatalogRepository,
+    LLMCallObservationRepository,
     MessageRepository,
     PipelineRunRepository,
 )
@@ -186,6 +188,82 @@ def test_recent_orders_newest_first_and_limits(db_session: Session) -> None:
     assert repo.recent(limit=50)[-1].id == runs[0].id
 
 
+def llm_observation(
+    conversation_id: uuid.UUID,
+    *,
+    pipeline_run_id: uuid.UUID | None,
+    total_seconds: float,
+    llm_seconds: float,
+    load_seconds: float = 0.01,
+    prompt_seconds: float = 0.02,
+    persist_seconds: float = 0.03,
+    retry_count: int = 0,
+) -> LLMCallObservation:
+    ts = datetime(2026, 7, 3, 10, 0, tzinfo=UTC)
+    return LLMCallObservation(
+        id=uuid.uuid4(),
+        pipeline_run_id=pipeline_run_id,
+        conversation_id=conversation_id,
+        day=1,
+        model="gemini-2.5-flash",
+        prompt_version="v1",
+        status="succeeded",
+        total_seconds=total_seconds,
+        load_seconds=load_seconds,
+        prompt_seconds=prompt_seconds,
+        llm_seconds=llm_seconds,
+        persist_seconds=persist_seconds,
+        message_count=3,
+        prompt_characters=1200,
+        issue_count=1,
+        retry_count=retry_count,
+        started_at=ts,
+        finished_at=ts,
+        error=None,
+    )
+
+
+def test_llm_observation_slowest_sorts_and_filters_by_run(db_session: Session) -> None:
+    conv_a = seeded_conversation(db_session, "conv_a")
+    conv_b = seeded_conversation(db_session, "conv_b")
+    run_a = pipeline_run("understand", minute=0)
+    run_b = pipeline_run("understand", minute=1)
+    run_repo = PipelineRunRepository(db_session)
+    run_repo.add(run_a)
+    run_repo.add(run_b)
+    db_session.flush()
+
+    repo = LLMCallObservationRepository(db_session)
+    repo.add(
+        llm_observation(
+            conv_a, pipeline_run_id=run_a.id, total_seconds=3.0, llm_seconds=2.5
+        )
+    )
+    repo.add(
+        llm_observation(
+            conv_b, pipeline_run_id=run_b.id, total_seconds=8.0, llm_seconds=1.0
+        )
+    )
+    repo.add(
+        llm_observation(
+            conv_a,
+            pipeline_run_id=run_a.id,
+            total_seconds=4.0,
+            llm_seconds=3.5,
+            retry_count=2,
+        )
+    )
+    db_session.commit()
+
+    assert repo.count() == 3
+    assert [row.llm_seconds for row in repo.slowest(sort="llm_seconds")] == [3.5, 2.5, 1.0]
+    assert [row.total_seconds for row in repo.slowest(sort="total_seconds", limit=2)] == [
+        8.0,
+        4.0,
+    ]
+    assert {row.pipeline_run_id for row in repo.slowest(pipeline_run_id=run_a.id)} == {run_a.id}
+
+
 def make_issue(
     conversation_id: uuid.UUID,
     canonical_name: str = "base water leak",
@@ -266,6 +344,67 @@ def test_issue_unmatched_count(db_session: Session) -> None:
     )
     db_session.commit()
     assert repo.unmatched_count() == 1
+
+
+def test_day_issue_stats_aggregates_counts_severity_and_resolution(
+    db_session: Session,
+) -> None:
+    conv1 = seeded_conversation(db_session, "conv_a", day=2)
+    conv2 = seeded_conversation(db_session, "conv_b", day=2)
+    conv3 = seeded_conversation(db_session, "conv_c", day=1)  # other day — excluded
+    repo = ConversationIssueRepository(db_session)
+
+    leak_high = make_issue(conv1, "leak")  # severity high, resolved, matched
+    leak_low = make_issue(conv2, "leak", matched=False)
+    leak_low.severity = "low"
+    leak_low.resolution_status = "unresolved"
+    repo.replace_for_conversation(conv1, [leak_high])
+    repo.replace_for_conversation(conv2, [leak_low])
+    repo.replace_for_conversation(conv3, [make_issue(conv3, "leak")])
+    db_session.commit()
+
+    stats = {s.canonical_name: s for s in repo.day_issue_stats(2)}
+    assert set(stats) == {"leak"}
+    leak = stats["leak"]
+    assert leak.count == 2
+    assert leak.high_severity_count == 1  # 'high' counts; 'critical' would too
+    assert leak.resolved_count == 1
+    assert leak.unmatched_count == 1
+
+
+def test_anomaly_replace_all_and_for_days(db_session: Session) -> None:
+    from cxintel.models import Anomaly
+
+    repo = AnomalyRepository(db_session)
+
+    def anomaly(issue: str, day: int, severity: str = "high") -> Anomaly:
+        return Anomaly(
+            id=uuid.uuid4(),
+            day=day,
+            issue=issue,
+            severity=severity,
+            delta=100.0,
+            description=f"{issue} spiked",
+            slack_message=f"alert: {issue}",
+            signals=["volume_spike"],
+            metrics={"baseline_count": 10, "current_count": 20},
+            recommended_action="investigate",
+            created_at=datetime(2026, 7, 3, tzinfo=UTC),
+        )
+
+    repo.replace_all([anomaly("leak", 2), anomaly("noise", 3, "critical")])
+    db_session.commit()
+    assert repo.count() == 2
+
+    rows = repo.for_days([2, 3])
+    assert [(a.issue, a.day) for a in rows] == [("leak", 2), ("noise", 3)]
+    assert rows[0].signals == ["volume_spike"]
+    assert rows[0].metrics["current_count"] == 20
+
+    # Derived data: replace_all regenerates without duplicates.
+    repo.replace_all([anomaly("leak", 2)])
+    db_session.commit()
+    assert repo.count() == 1
 
 
 def test_issue_catalog_replace_all_and_all(db_session: Session) -> None:

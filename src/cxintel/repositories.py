@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from .models import (
     ConversationAnalysis,
     ConversationIssue,
     IssueCatalogEntry,
+    LLMCallObservation,
     Message,
     PipelineRun,
 )
@@ -155,6 +156,24 @@ class IssueAggregate:
         self.examples = examples
 
 
+class IssueDayStats:
+    """Per-canonical-name operational statistics for one day (anomaly inputs)."""
+
+    def __init__(
+        self,
+        canonical_name: str,
+        count: int,
+        high_severity_count: int,
+        resolved_count: int,
+        unmatched_count: int,
+    ) -> None:
+        self.canonical_name = canonical_name
+        self.count = count
+        self.high_severity_count = high_severity_count
+        self.resolved_count = resolved_count
+        self.unmatched_count = unmatched_count
+
+
 class ConversationIssueRepository:
     """Persistence for :class:`ConversationIssue` projections (derived data)."""
 
@@ -193,6 +212,37 @@ class ConversationIssueRepository:
             .order_by(ConversationIssue.canonical_name)
         ).scalars()
         return list(rows)
+
+    def day_issue_stats(self, day: int) -> list[IssueDayStats]:
+        """Per-canonical-name operational statistics for one day (anomaly inputs).
+
+        One grouped SQL query: count, high/critical-severity count, resolved
+        count, and catalog-unmatched count per issue category.
+        """
+        high = case((ConversationIssue.severity.in_(["high", "critical"]), 1), else_=0)
+        resolved = case((ConversationIssue.resolution_status == "resolved", 1), else_=0)
+        unmatched = case((ConversationIssue.catalog_matched.is_(False), 1), else_=0)
+        rows = (
+            self._session.execute(
+                select(
+                    ConversationIssue.canonical_name,
+                    func.count(),
+                    func.sum(high),
+                    func.sum(resolved),
+                    func.sum(unmatched),
+                )
+                .join(Conversation, Conversation.id == ConversationIssue.conversation_id)
+                .where(Conversation.day == day)
+                .group_by(ConversationIssue.canonical_name)
+                .order_by(ConversationIssue.canonical_name)
+            )
+            .tuples()
+            .all()
+        )
+        return [
+            IssueDayStats(name, count, int(high_n), int(resolved_n), int(unmatched_n))
+            for name, count, high_n, resolved_n, unmatched_n in rows
+        ]
 
     def aggregate_for_day(self, day: int) -> list[IssueAggregate]:
         """Group a day's issues by canonical name with example descriptions."""
@@ -270,14 +320,80 @@ class PipelineRunRepository:
         )
 
 
+LLM_OBSERVATION_SORT_FIELDS = {
+    "total_seconds": LLMCallObservation.total_seconds,
+    "llm_seconds": LLMCallObservation.llm_seconds,
+    "load_seconds": LLMCallObservation.load_seconds,
+    "prompt_seconds": LLMCallObservation.prompt_seconds,
+    "persist_seconds": LLMCallObservation.persist_seconds,
+    "retry_count": LLMCallObservation.retry_count,
+    "started_at": LLMCallObservation.started_at,
+}
+
+
+class LLMCallObservationRepository:
+    """Persistence and slow-call queries for LLM timing observations."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, observation: LLMCallObservation) -> None:
+        self._session.add(observation)
+
+    def count(self) -> int:
+        return self._session.execute(
+            select(func.count()).select_from(LLMCallObservation)
+        ).scalar_one()
+
+    def slowest(
+        self,
+        *,
+        limit: int = 20,
+        sort: str = "total_seconds",
+        pipeline_run_id: uuid.UUID | None = None,
+    ) -> list[LLMCallObservation]:
+        """Return recent/slow observations sorted by an allowed diagnostic field."""
+        sort_column = LLM_OBSERVATION_SORT_FIELDS.get(sort)
+        if sort_column is None:
+            raise ValueError(f"Unsupported LLM observation sort '{sort}'.")
+        stmt = select(LLMCallObservation)
+        if pipeline_run_id is not None:
+            stmt = stmt.where(LLMCallObservation.pipeline_run_id == pipeline_run_id)
+        return list(
+            self._session.execute(
+                stmt.order_by(sort_column.desc(), LLMCallObservation.started_at.desc()).limit(limit)
+            ).scalars()
+        )
+
+
 class AnomalyRepository:
-    """Persistence for :class:`Anomaly` rows (Phase 4 extends this)."""
+    """Persistence for :class:`Anomaly` rows — the canonical Phase 4 artifact."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
 
     def add(self, anomaly: Anomaly) -> None:
         self._session.add(anomaly)
+
+    def replace_all(self, anomalies: Sequence[Anomaly]) -> None:
+        """Regenerate the whole anomaly set (derived data — reruns never duplicate)."""
+        self._session.query(Anomaly).delete()
+        self._session.add_all(anomalies)
+
+    def for_days(self, days: Sequence[int]) -> list[Anomaly]:
+        """Anomalies for the given days, ordered by day then issue."""
+        return list(
+            self._session.execute(
+                select(Anomaly)
+                .where(Anomaly.day.in_(list(days)))
+                .order_by(Anomaly.day, Anomaly.issue)
+            ).scalars()
+        )
+
+    def all(self) -> list[Anomaly]:
+        return list(
+            self._session.execute(select(Anomaly).order_by(Anomaly.day, Anomaly.issue)).scalars()
+        )
 
     def count(self) -> int:
         return self._session.execute(select(func.count()).select_from(Anomaly)).scalar_one()

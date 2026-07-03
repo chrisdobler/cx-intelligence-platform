@@ -214,6 +214,43 @@ This prompt will generate a grounded resolution using retrieved historical conve
 
 ## Prompt 3 — Slack Alert Generation
 
-_Status: Not yet implemented._
+_Status: Implemented (`prompt_version = "1.0"`, `src/cxintel/anomaly/prompt.py`)._
 
-This prompt will convert detected anomalies into concise operational Slack alerts.
+### Purpose
+
+Convert one already-detected canonical anomaly into a concise operational
+Slack alert. Detection is deterministic (ADR-012) and finished before this
+prompt runs — the LLM summarizes findings, it never discovers them.
+
+### Inputs
+
+One `CanonicalAnomaly` (issue, severity, signals, metrics, summary,
+recommended action), embedded in the prompt as JSON data — payload, not schema.
+
+### Output Contract
+
+`SlackAlert{text}` (`src/cxintel/anomaly/schema.py`), supplied natively via
+the provider's structured-output mechanism.
+
+### Prompt Text
+
+```text
+You write concise operational Slack alerts for a customer-support platform.
+An anomaly has already been detected by a deterministic rules engine — do not
+re-analyze, question, or embellish it. Convert it into a Slack alert:
+
+- 2 to 4 short lines, plain text (Slack markdown like *bold* is fine).
+- Lead with the severity and the issue name.
+- Include the key numbers from the metrics (counts, percentages).
+- End with the recommended action.
+- Do not invent facts that are not in the anomaly data.
+
+Detected anomaly:
+
+{anomaly JSON}
+```
+
+### Notes
+
+If the provider cannot produce a valid alert, a deterministic fallback
+template is used — alert prose can never fail an anomaly-detection run.

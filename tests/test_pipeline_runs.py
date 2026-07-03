@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import pytest
@@ -69,11 +70,17 @@ def test_running_row_exists_while_stage_executes(
     observed: list[str] = []
 
     class ObservantStage(FakeStage):
-        def run(self, session_factory: Any, progress: Any, option: str | None = None) -> str:
+        def run(
+            self,
+            session_factory: Any,
+            progress: Any,
+            option: str | None = None,
+            run_id: uuid.UUID | None = None,
+        ) -> str:
             with session_factory() as session:
                 runs = PipelineRunRepository(session).recent(limit=5)
                 observed.extend(r.status for r in runs if r.stage_key == "a")
-            return super().run(session_factory, progress, option)
+            return super().run(session_factory, progress, option, run_id)
 
     use_stages(monkeypatch, ObservantStage("a"))
     run_stage("a")

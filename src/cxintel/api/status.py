@@ -104,13 +104,18 @@ def _ingest_metrics() -> Metrics:
     endpoint keeps working when the database is down or not yet migrated.
     """
     from ..db import get_session_factory
-    from ..repositories import ConversationAnalysisRepository, ConversationRepository
+    from ..repositories import (
+        AnomalyRepository,
+        ConversationAnalysisRepository,
+        ConversationRepository,
+    )
 
     try:
         with get_session_factory()() as session:
             return Metrics(
                 imported_conversations=ConversationRepository(session).count(),
                 processed_conversations=ConversationAnalysisRepository(session).count(),
+                anomaly_count=AnomalyRepository(session).count(),
             )
     except Exception:
         return Metrics()

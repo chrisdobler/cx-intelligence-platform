@@ -200,6 +200,13 @@ def test_run_understand_sample_end_to_end(
     assert understand["complete"] is True  # 1 of 1 analyzed
     assert payload["metrics"]["processed_conversations"] == 1
 
+    observations = client.get("/api/pipeline/llm-observations?sort=llm_seconds").json()
+    assert len(observations) == 1
+    assert observations[0]["conversation_external_id"] == "conv_0001"
+    assert observations[0]["status"] == "succeeded"
+    assert observations[0]["pipeline_run_id"] is not None
+    assert observations[0]["prompt_characters"] > 0
+
 
 def test_runs_endpoint_empty(settings_on_test_db: str, db_session: Any) -> None:
     assert client.get("/api/pipeline/runs").json() == []

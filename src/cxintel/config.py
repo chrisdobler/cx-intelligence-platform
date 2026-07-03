@@ -45,8 +45,21 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="gemini-embedding-001")
     embedding_dim: int = Field(default=3072)
 
-    # --- Anomaly alerts — used from Phase 4 ------------------------------
+    # --- Anomaly detection — Phase 4 --------------------------------------
     slack_webhook_url: str | None = Field(default=None)
+    anomaly_spike_threshold_pct: float = Field(
+        default=50.0, description="Min % volume increase vs the Day 1 baseline for a spike."
+    )
+    anomaly_drift_threshold: float = Field(
+        default=0.15, description="Min absolute share change for severity/resolution drift."
+    )
+    anomaly_min_count: int = Field(
+        default=5, description="Min current-day occurrences for spike/drift signals."
+    )
+    anomaly_report_path: str = Field(
+        default="reports/anomaly-report.md",
+        description="Where the generated anomaly report is written.",
+    )
 
     # --- Pipeline knobs ---------------------------------------------------
     raw_data_path: str = Field(default="data/raw/sample_tickets_v6.json")

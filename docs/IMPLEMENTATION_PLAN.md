@@ -101,10 +101,19 @@ evaluation, and future AI capabilities.
 
 # Phase 4 — Anomaly Detection
 
-> Status: pending.
-
-> This phase consumes ConversationIssue and IssueCatalog to produce
-> canonical anomaly artifacts. Raw conversations are not reparsed.
+> **Status: delivered.** A deterministic multi-signal rules engine (ADR-012)
+> compares each day's issue statistics against the Day-1 baseline — volume
+> spikes, novel issues (from the issue catalog), severity drift, and
+> resolution drift — and emits canonical anomalies carrying their triggering
+> signals, supporting metrics, summary, and recommended action. Slack alerts
+> are generated from anomalies via Prompt 3 (deterministic fallback if the
+> LLM fails) and delivered when `SLACK_WEBHOOK_URL` is set; the anomaly
+> report is written to `reports/anomaly-report.md` and served at
+> `GET /api/anomalies/report`. Integrated with `app analyze` / `app report`,
+> `GET /api/anomalies`, the control center, and the orchestrator. Thresholds
+> are explicit settings (`ANOMALY_SPIKE_THRESHOLD_PCT`,
+> `ANOMALY_DRIFT_THRESHOLD`, `ANOMALY_MIN_COUNT`). Raw conversations are
+> never reparsed; the LLM plays no part in detection.
 
 ## Objectives
 
@@ -233,8 +242,11 @@ respecting the complexity budget):
 - **Pipeline auditing**: every stage execution is durably recorded in the
   `pipeline_runs` table (stage, trigger source, timing, outcome; a `running`
   row is written up front so crashes leave evidence). Surfaced via the Recent
-  Runs panel, `GET /api/pipeline/runs`, and `app runs`. Phase 7's per-AI-call
-  metrics (model, latency, token usage) will build on this audit trail.
+  Runs panel, `GET /api/pipeline/runs`, and `app runs`. Phase 3 understanding
+  now records per-conversation `llm_call_observations` for load, prompt, LLM,
+  persistence, retry, and size bottleneck analysis, surfaced via
+  `GET /api/pipeline/llm-observations` and `app bottlenecks`; token usage
+  remains part of the broader Phase 7 observability work.
 
 ### Onboarding / AI setup
 
