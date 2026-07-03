@@ -89,6 +89,12 @@ def test_run_ingest_end_to_end(
     payload = client.get("/api/status").json()
     assert payload["job"]["state"] == "succeeded"
     assert "1 conversations" in payload["job"]["message"]
+    progress = payload["job"]["progress_detail"]
+    assert progress["stage_key"] == "ingest"
+    assert progress["total_work"] == 1
+    assert progress["completed_work"] == 1
+    assert progress["percentage"] == 100
+    assert progress["current_item"] == "conv_0001"
     ingest = next(s for s in payload["pipeline"] if s["key"] == "ingest")
     assert ingest["complete"] is True
     assert ingest["state"] == "done"

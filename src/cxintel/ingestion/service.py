@@ -16,6 +16,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from ..pipeline.progress import ProgressReporter
 from ..repositories import ConversationRepository, MessageRepository
 from .loader import RawConversation, load_raw_conversations
 
@@ -94,9 +95,15 @@ class IngestionService:
         self._conversations = ConversationRepository(session)
         self._messages = MessageRepository(session)
 
-    def ingest(self, path: Path) -> IngestionResult:
+    def ingest(self, path: Path, progress: ProgressReporter | None = None) -> IngestionResult:
         """Load, validate, and persist the dataset at ``path`` in one transaction."""
         records = load_raw_conversations(path)
+        if progress is not None:
+            progress.report(
+                total_work=len(records),
+                completed_work=0,
+                message="Importing conversations…",
+            )
 
         conversation_batch: list[dict[str, Any]] = []
         message_batch: list[dict[str, Any]] = []
@@ -115,6 +122,11 @@ class IngestionService:
             message_batch.clear()
 
         for raw in records:
+            if progress is not None:
+                progress.set_current(
+                    raw.conversation_id,
+                    message=f"Importing {raw.conversation_id}…",
+                )
             row = conversation_row(raw)
             conversation_batch.append(row)
             batch = message_rows(raw, row["id"])
@@ -122,6 +134,11 @@ class IngestionService:
             messages_seen += len(batch)
             if len(message_batch) >= _CHUNK_SIZE:
                 flush()
+            if progress is not None:
+                progress.advance(
+                    current_item=raw.conversation_id,
+                    message=f"Imported {raw.conversation_id}.",
+                )
         flush()
 
         self._session.commit()

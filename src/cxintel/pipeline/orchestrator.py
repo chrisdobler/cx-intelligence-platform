@@ -22,13 +22,13 @@ from datetime import UTC, datetime
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from .progress import ProgressCallback
 from .stages import (
     AnomalyStage,
     IngestStage,
     KnowledgeBaseStage,
     PipelineStage,
     Prerequisite,
-    ProgressCallback,
     ResolutionAssistantStage,
     StageKind,
     UnderstandStage,
@@ -259,7 +259,7 @@ def recent_runs(limit: int = 20) -> list[RunRecord]:
     ]
 
 
-def _noop_progress(_message: str) -> None:
+def _noop_progress(_message: object) -> None:
     return None
 
 

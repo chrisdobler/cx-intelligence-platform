@@ -15,6 +15,7 @@ from cxintel.pipeline.orchestrator import (
     run_stage,
     stage_statuses,
 )
+from cxintel.pipeline.progress import ProgressReporter, ProgressSnapshot
 from cxintel.pipeline.stages import (
     PipelineStage,
     Prerequisite,
@@ -284,6 +285,58 @@ def test_job_tracker_progress_updates(monkeypatch: pytest.MonkeyPatch) -> None:
 
     tracker.start("pipeline", work)
     assert seen == ["halfway"]
+
+
+def test_job_tracker_structured_progress_updates(monkeypatch: pytest.MonkeyPatch) -> None:
+    tracker = make_inline_tracker(monkeypatch)
+    seen: list[ProgressSnapshot] = []
+
+    def work(progress: Any) -> str:
+        reporter = ProgressReporter(
+            stage_key="ingest",
+            stage_label="Data Ingestion",
+            progress=progress,
+            total_work=4,
+            message="Importing…",
+        )
+        reporter.advance(current_item="conv_1", count=2, message="Halfway.")
+        job = tracker.current()
+        assert job is not None and job.progress_detail is not None
+        seen.append(job.progress_detail)
+        return "done"
+
+    tracker.start("pipeline", work)
+    assert seen[0].stage_key == "ingest"
+    assert seen[0].completed_work == 2
+    assert seen[0].total_work == 4
+    assert seen[0].percentage == 50
+    assert seen[0].current_item == "conv_1"
+    assert seen[0].throughput_conversations_per_second >= 0
+
+
+def test_job_tracker_failure_preserves_structured_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracker = make_inline_tracker(monkeypatch)
+
+    def boom(progress: Any) -> str:
+        progress(
+            ProgressSnapshot(
+                stage_key="understand",
+                stage_label="Conversation Understanding",
+                total_work=2,
+                completed_work=1,
+                message="working",
+            )
+        )
+        raise RuntimeError("kaput")
+
+    tracker.start("understand", boom)
+    job = tracker.current()
+    assert job is not None and job.progress_detail is not None
+    assert job.state == JobState.FAILED
+    assert job.progress_detail.failure_count == 1
+    assert job.progress_detail.message == "kaput"
 
 
 def test_job_tracker_busy(monkeypatch: pytest.MonkeyPatch) -> None:

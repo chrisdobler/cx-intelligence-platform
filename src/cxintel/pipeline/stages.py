@@ -23,7 +23,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
-ProgressCallback = Callable[[str], None]
+from .progress import ProgressCallback, ProgressReporter
 
 
 class StageKind(StrEnum):
@@ -170,12 +170,19 @@ class IngestStage(PipelineStage):
         from ..config import get_settings
         from ..ingestion.service import IngestionService
 
-        progress("Applying database migrations…")
+        reporter = ProgressReporter(
+            stage_key=self.key,
+            stage_label=self.label,
+            progress=progress,
+            message="Applying database migrations…",
+        )
         command.upgrade(Config("alembic.ini"), "head")
 
-        progress("Validating and importing the dataset…")
+        reporter.report(message="Validating and importing the dataset…")
         with session_factory() as session:
-            result = IngestionService(session).ingest(Path(get_settings().raw_data_path))
+            result = IngestionService(session).ingest(
+                Path(get_settings().raw_data_path), progress=reporter
+            )
 
         conv_skipped = result.conversations_seen - result.conversations_inserted
         msg_skipped = result.messages_seen - result.messages_inserted

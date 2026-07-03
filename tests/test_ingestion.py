@@ -229,3 +229,28 @@ def test_ingest_is_idempotent(tmp_path: Path, db_session: Any) -> None:
     assert conv.started_at == datetime(2026, 2, 24, 7, 8, tzinfo=UTC)
     assert conv.ended_at == datetime(2026, 2, 24, 7, 12, tzinfo=UTC)
     assert next(m.body for m in conv.messages) == "My pod is leaking."
+
+
+def test_ingest_reports_live_progress(tmp_path: Path, db_session: Any) -> None:
+    from cxintel.ingestion.service import IngestionService
+    from cxintel.pipeline.progress import ProgressReporter
+
+    path = write_dataset(
+        tmp_path,
+        [make_record(), make_record("conv_0002", "open", False)],
+    )
+    updates: list[Any] = []
+    reporter = ProgressReporter(
+        stage_key="ingest",
+        stage_label="Data Ingestion",
+        progress=updates.append,
+        message="starting",
+    )
+
+    IngestionService(db_session).ingest(path, progress=reporter)
+
+    final = [u for u in updates if hasattr(u, "completed_work")][-1]
+    assert final.total_work == 2
+    assert final.completed_work == 2
+    assert final.percentage == 100
+    assert final.current_item == "conv_0002"

@@ -87,6 +87,25 @@
     .pipeline-head .name { font-weight: 600; }
     .pipeline-head .detail { color: var(--muted); font-size: 13px; }
     .pipeline-head .detail.err { color: var(--red); }
+    .progress-panel { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .progress-panel.active { display: block; }
+    .progress-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .progress-title { font-weight: 700; }
+    .progress-message { color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .progress-percent { font-size: 22px; font-weight: 800; color: var(--accent); }
+    .progress-bar {
+      height: 12px; border-radius: 999px; background: #eef1f5; overflow: hidden;
+      margin-top: 12px; border: 1px solid var(--border);
+    }
+    .progress-fill { height: 100%; width: 0%; background: var(--green); transition: width .2s ease; }
+    .progress-stats {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+      margin-top: 12px; font-size: 12.5px;
+    }
+    .progress-stat { min-width: 0; }
+    .progress-stat .k { color: var(--muted); }
+    .progress-stat .v { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @media (max-width: 720px) { .progress-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     .stage-num {
       display: inline-flex; align-items: center; justify-content: center; flex: none;
       width: 20px; height: 20px; border-radius: 50%;
@@ -107,6 +126,7 @@
     .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
     .btn:disabled { opacity: .55; cursor: default; }
     .stage-card { display: flex; flex-direction: column; gap: 8px; }
+    .stage-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(31,42,68,.08); }
     .stage-head { display: flex; align-items: center; gap: 10px; }
     .stage-head .name { font-weight: 600; flex: 1; }
     .stage-head .when { color: var(--muted); font-size: 12px; }
@@ -191,6 +211,7 @@
           </div>
           <button class="btn primary" id="run-remaining" disabled>Run Remaining Pipeline</button>
         </div>
+        <div class="progress-panel" id="progress-panel" aria-live="polite"></div>
         <div class="flow" id="stage-flow"></div>
       </div>
       <div class="grid cols-2" id="stage-cards" style="margin-top:12px;"></div>
@@ -240,6 +261,20 @@
     document.getElementById("link-db").href = adminerUrl;
 
     const fmtNum = (v) => (v === null || v === undefined) ? "—" : v.toLocaleString();
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+    const fmtDuration = (seconds) => {
+      if (seconds === null || seconds === undefined) return "—";
+      const s = Math.max(0, Math.round(seconds));
+      if (s < 60) return `${s}s`;
+      const m = Math.floor(s / 60);
+      const rem = s % 60;
+      if (m < 60) return `${m}m ${rem}s`;
+      const h = Math.floor(m / 60);
+      return `${h}h ${m % 60}m`;
+    };
+    const fmtRate = (v) => (v === null || v === undefined) ? "—" : `${v.toFixed(2)}/s`;
 
     function renderServices(services, apiReachable) {
       const el = document.getElementById("services");
@@ -334,6 +369,7 @@
 
     function renderStageCards(stages, job) {
       const busy = job && job.state === "running";
+      const activeStage = busy && job.progress_detail ? job.progress_detail.stage_key : null;
       const badge = (st, i) =>
         `<span class="stage-num ${st.complete ? "done" : ""}">${i + 1}</span>`;
       document.getElementById("stage-flow").innerHTML = stages.map((st, i) =>
@@ -348,10 +384,17 @@
         const reason = stageDisabledReason(st);
         const runnableAction = st.action === "open" ? Boolean(st.open_url) : st.runnable;
         const disabled = busy || !runnableAction;
-        const button = st.action === "open" && st.open_url && !disabled
-          ? `<a class="btn" href="${st.open_url}">Open</a>`
-          : `<button class="btn" data-stage="${st.key}" data-action="${st.action}" ${disabled ? "disabled" : ""}>${ACTION_LABELS[st.action] ?? "Run"}</button>`;
-        return `<div class="card stage-card">
+        let button;
+        if (st.action === "open" && st.open_url && !disabled) {
+          button = `<a class="btn" href="${st.open_url}">Open</a>`;
+        } else if (st.run_options && st.run_options.length && st.action !== "open") {
+          button = st.run_options.map((opt) =>
+            `<button class="btn" data-stage="${st.key}" data-option="${opt.value}" ${disabled ? "disabled" : ""}>${opt.label}</button>`
+          ).join("");
+        } else {
+          button = `<button class="btn" data-stage="${st.key}" data-action="${st.action}" ${disabled ? "disabled" : ""}>${ACTION_LABELS[st.action] ?? "Run"}</button>`;
+        }
+        return `<div class="card stage-card ${activeStage === st.key ? "active" : ""}">
           <div class="stage-head">
             ${badge(st, i)}
             <span class="dot ${dot}"></span>
@@ -365,8 +408,42 @@
         </div>`;
       }).join("");
       for (const btn of el.querySelectorAll("button[data-stage]")) {
-        btn.addEventListener("click", () => runStage(btn.getAttribute("data-stage")));
+        btn.addEventListener("click", () =>
+          runStage(btn.getAttribute("data-stage"), btn.getAttribute("data-option")));
       }
+    }
+
+    function renderProgress(job) {
+      const el = document.getElementById("progress-panel");
+      const detail = job && job.state === "running" ? job.progress_detail : null;
+      if (!detail) {
+        el.className = "progress-panel";
+        el.innerHTML = "";
+        return;
+      }
+      const pct = Math.max(0, Math.min(100, detail.percentage ?? 0));
+      const work = detail.total_work
+        ? `${fmtNum(detail.completed_work)} / ${fmtNum(detail.total_work)}`
+        : "preparing";
+      el.className = "progress-panel active";
+      el.innerHTML = `
+        <div class="progress-top">
+          <div>
+            <div class="progress-title">${esc(detail.stage_label)}</div>
+            <div class="progress-message">${esc(detail.message || job.progress || "Running…")}</div>
+          </div>
+          <div class="progress-percent">${Math.round(pct)}%</div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+        <div class="progress-stats">
+          <div class="progress-stat"><div class="k">Work</div><div class="v">${work}</div></div>
+          <div class="progress-stat"><div class="k">Elapsed</div><div class="v">${fmtDuration(detail.elapsed_seconds)}</div></div>
+          <div class="progress-stat"><div class="k">ETA</div><div class="v">${fmtDuration(detail.estimated_remaining_seconds)}</div></div>
+          <div class="progress-stat"><div class="k">Throughput</div><div class="v">${fmtRate(detail.throughput_conversations_per_second)}</div></div>
+          <div class="progress-stat"><div class="k">Current</div><div class="v" title="${esc(detail.current_item ?? "")}">${esc(detail.current_item ?? "—")}</div></div>
+          <div class="progress-stat"><div class="k">Retries</div><div class="v">${fmtNum(detail.retry_count)}</div></div>
+          <div class="progress-stat"><div class="k">Failures</div><div class="v">${fmtNum(detail.failure_count)}</div></div>
+        </div>`;
     }
 
     function renderJob(job, stages) {
@@ -375,6 +452,7 @@
       const busy = job && job.state === "running";
       const anyRunnable = stages.some((st) => st.runnable && !st.complete);
       runBtn.disabled = busy;
+      renderProgress(job);
       line.className = "detail";
       if (!job) {
         line.textContent = anyRunnable
@@ -416,7 +494,9 @@
       }
     }
 
-    const runStage = (key) => postRun(`/api/pipeline/${key}/run`);
+    const runStage = (key, option) => postRun(
+      option ? `/api/pipeline/${key}/run?option=${encodeURIComponent(option)}` : `/api/pipeline/${key}/run`
+    );
     document.getElementById("run-remaining").addEventListener("click", () =>
       postRun("/api/pipeline/run"));
 
@@ -474,7 +554,8 @@
         renderJob(data.job, data.pipeline);
         renderMetrics(data.metrics);
         await loadRuns();
-        if (!data.job || data.job.state !== "running") stopPolling();
+        if (data.job && data.job.state === "running") startPolling();
+        else stopPolling();
       } catch (e) {
         document.getElementById("services").innerHTML =
           `<div class="service"><span class="dot down"></span>
