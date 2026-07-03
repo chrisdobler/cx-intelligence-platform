@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Conversation Intelligence Platform</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --card: #ffffff;
+      --border: #e4e7ec;
+      --text: #1a2027;
+      --muted: #667085;
+      --accent: #1f2a44;
+      --green: #12b76a;
+      --yellow: #f79009;
+      --red: #f04438;
+      --grey: #cfd4dc;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 40px 24px 64px; }
+    header.page { margin-bottom: 28px; }
+    header.page h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
+    header.page p { margin: 0; color: var(--muted); }
+    section { margin-top: 28px; }
+    h2 {
+      font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); margin: 0 0 12px; font-weight: 600;
+    }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 20px;
+    }
+    .grid { display: grid; gap: 12px; }
+    .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+    @media (max-width: 720px) { .grid.cols-3, .grid.cols-2 { grid-template-columns: 1fr; } }
+
+    /* Service status */
+    .service { display: flex; align-items: center; gap: 10px; }
+    .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--grey); flex: none; }
+    .dot.ok { background: var(--green); }
+    .dot.degraded { background: var(--yellow); }
+    .dot.down { background: var(--red); }
+    .service .name { font-weight: 600; }
+    .service .detail { color: var(--muted); font-size: 13px; }
+
+    /* Pipeline */
+    .stage { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+    .stage .mark { width: 20px; text-align: center; font-size: 15px; }
+    .stage.done .mark { color: var(--green); }
+    .stage.pending .mark { color: var(--grey); }
+    .stage.pending .label { color: var(--muted); }
+
+    /* Metrics */
+    .metric .value { font-size: 24px; font-weight: 700; }
+    .metric .label { color: var(--muted); font-size: 13px; }
+
+    /* Quick actions */
+    .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    @media (max-width: 720px) { .actions { grid-template-columns: 1fr 1fr; } }
+    .action {
+      display: flex; flex-direction: column; justify-content: center; gap: 4px;
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px; min-height: 84px; text-decoration: none; color: var(--text);
+      cursor: pointer; transition: border-color .12s, box-shadow .12s; text-align: left;
+      font: inherit; width: 100%;
+    }
+    .action:hover { border-color: var(--accent); box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+    .action .t { font-weight: 600; }
+    .action .s { color: var(--muted); font-size: 13px; }
+    .action.soon { opacity: .6; cursor: default; }
+    .action.soon:hover { border-color: var(--border); box-shadow: none; }
+    .action .cmd {
+      display: none; margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px; background: #0f172a; color: #e2e8f0; padding: 6px 8px; border-radius: 6px;
+    }
+    .action.revealed .cmd { display: block; }
+
+    /* Quick links */
+    .links { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+    .links a { color: var(--accent); text-decoration: none; font-weight: 500; }
+    .links a:hover { text-decoration: underline; }
+    footer { margin-top: 40px; color: var(--muted); font-size: 12.5px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="page">
+      <h1>Conversation Intelligence Platform</h1>
+      <p>Understand support conversations, detect emerging issues, and assist agents with retrieval-augmented answers.</p>
+    </header>
+
+    <section>
+      <h2>Service Status</h2>
+      <div class="card">
+        <div id="services" class="grid cols-3">
+          <div class="service"><span class="dot"></span><span class="detail">Loading…</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Pipeline Status</h2>
+      <div class="card">
+        <div id="pipeline"><div class="stage pending"><span class="mark">○</span><span class="label">Loading…</span></div></div>
+        <div class="grid cols-2" id="metrics" style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Quick Actions</h2>
+      <div class="actions">
+        <button class="action" type="button" data-cmd="make pipeline">
+          <span class="t">Run Pipeline</span>
+          <span class="s">Run the full ingest → understand → build-kb pipeline</span>
+          <span class="cmd"></span>
+        </button>
+        <button class="action" type="button" data-cmd="make chat">
+          <span class="t">Open Chat</span>
+          <span class="s">Interactive Resolution Assistant (CLI)</span>
+          <span class="cmd"></span>
+        </button>
+        <a class="action" href="/docs">
+          <span class="t">Open API Documentation</span>
+          <span class="s">Swagger UI for the HTTP API</span>
+        </a>
+        <a class="action" id="action-db" href="#" target="_blank" rel="noopener">
+          <span class="t">Open Database UI</span>
+          <span class="s">Inspect PostgreSQL with Adminer</span>
+        </a>
+        <div class="action soon">
+          <span class="t">View Reports</span>
+          <span class="s">Anomaly reports — coming in Phase 4</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Quick Links</h2>
+      <div class="card links">
+        <a href="/docs">Swagger</a>
+        <a id="link-db" href="#" target="_blank" rel="noopener">Database UI</a>
+        <a href="/health">Health endpoint</a>
+        <a href="/api/config">Configuration</a>
+      </div>
+    </section>
+
+    <footer id="footer">Conversation Intelligence Platform</footer>
+  </div>
+
+  <script>
+    const adminerUrl = `${location.protocol}//${location.hostname}:8080`;
+    document.getElementById("action-db").href = adminerUrl;
+    document.getElementById("link-db").href = adminerUrl;
+
+    // Quick actions that map to CLI commands: reveal the command to run.
+    for (const btn of document.querySelectorAll(".action[data-cmd]")) {
+      const cmd = btn.getAttribute("data-cmd");
+      btn.querySelector(".cmd").textContent = `$ ${cmd}`;
+      btn.addEventListener("click", () => btn.classList.toggle("revealed"));
+    }
+
+    const fmtNum = (v) => (v === null || v === undefined) ? "—" : v.toLocaleString();
+
+    function renderServices(services, apiReachable) {
+      const el = document.getElementById("services");
+      const items = services.map((s) => {
+        // The API cannot report itself as down; if the page couldn't fetch
+        // status at all, that branch marks it red instead.
+        const state = s.state;
+        return `<div class="service">
+          <span class="dot ${state}"></span>
+          <span><span class="name">${s.name}</span><br><span class="detail">${s.detail ?? ""}</span></span>
+        </div>`;
+      });
+      el.innerHTML = items.join("");
+    }
+
+    function renderPipeline(stages) {
+      document.getElementById("pipeline").innerHTML = stages.map((st) => {
+        const done = st.state === "done";
+        return `<div class="stage ${done ? "done" : "pending"}">
+          <span class="mark">${done ? "✔" : "○"}</span>
+          <span class="label">${st.label}</span>
+        </div>`;
+      }).join("");
+    }
+
+    function renderMetrics(m) {
+      const rows = [
+        ["Imported conversations", m.imported_conversations],
+        ["Processed conversations", m.processed_conversations],
+        ["Embeddings", m.embedding_count],
+        ["Anomalies", m.anomaly_count],
+      ];
+      document.getElementById("metrics").innerHTML = rows.map(
+        ([label, val]) => `<div class="metric"><div class="value">${fmtNum(val)}</div><div class="label">${label}</div></div>`
+      ).join("");
+    }
+
+    async function load() {
+      try {
+        const res = await fetch("/api/status");
+        const data = await res.json();
+        renderServices(data.services, true);
+        renderPipeline(data.pipeline);
+        renderMetrics(data.metrics);
+      } catch (e) {
+        document.getElementById("services").innerHTML =
+          `<div class="service"><span class="dot down"></span>
+           <span><span class="name">FastAPI API</span><br>
+           <span class="detail">status endpoint unreachable</span></span></div>`;
+      }
+    }
+    load();
+  </script>
+</body>
+</html>

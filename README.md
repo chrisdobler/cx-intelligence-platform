@@ -22,18 +22,47 @@ retrieval-augmented generation (RAG).
 
 ```bash
 make install       # create the venv and install dependencies (uv sync)
-make check         # ruff + mypy + pytest — all green, no DB required
-make up            # start PostgreSQL + pgvector (waits until healthy)
-make db-health     # verify connectivity and that pgvector is installed
-make serve         # run the API — then GET http://127.0.0.1:8000/health
-make down          # stop the database
+make start         # start the database + Adminer, then serve the app
+# → open http://localhost:8000
+make stop          # stop the containers (Ctrl-C stops the API first)
 ```
+
+`make start` brings up PostgreSQL + pgvector (waiting until healthy) and the
+Adminer database UI, then serves the API in the foreground and prints the URLs.
+Everything is discoverable from the landing page — no further docs required.
 
 Optional: copy `.env.example` to `.env` to override any setting.
 
-> **Port already in use?** The database publishes host port 5432 by default. If
-> that's taken, pick another: `DB_HOST_PORT=5433 make up` and set
-> `DATABASE_URL=postgresql+psycopg://cx:cx@localhost:5433/cx` (in `.env`).
+> **Port already in use?** The database publishes host port 5432 and Adminer
+> 8080 by default. Override either: `DB_HOST_PORT=5433 ADMINER_HOST_PORT=8081
+> make start` (and set `DATABASE_URL=postgresql+psycopg://cx:cx@localhost:5433/cx`
+> in `.env` if you moved the DB port).
+
+## Control center
+
+The landing page at [http://localhost:8000](http://localhost:8000) is the
+control center for the platform:
+
+- **Service Status** — green/yellow/red health for PostgreSQL, pgvector, and the API.
+- **Pipeline Status** — progress across the five processing stages (placeholders
+  until each phase lands) plus headline counts.
+- **Quick Actions / Links** — jump to the API docs, the database UI, and more.
+
+Endpoints:
+
+| Path | Purpose |
+|---|---|
+| `/` | Control-center landing page |
+| `/docs` | Swagger UI |
+| `/health` | Machine health probe (JSON) |
+| `/api/status` | Service + pipeline status (backs the landing page) |
+| `/api/config` | Non-secret configuration (secrets reported only as set/unset) |
+| `http://localhost:8080` | Adminer database UI (server `db`, user/pass/db all `cx`) |
+
+### Lower-level targets
+
+`make start`/`stop` are built on smaller targets you can also run directly:
+`make up`/`down` (containers only), `make serve` (API only), `make db-health`.
 
 ## Project layout
 
@@ -43,7 +72,9 @@ src/cxintel/
   logging.py         # logging setup
   db.py              # engine, session factory, health check
   cli.py             # `app` CLI (Typer)
-  api/app.py         # FastAPI app (/health)
+  api/app.py         # FastAPI app (landing page + /health, /api/status, /api/config)
+  api/status.py      # typed platform-status model (backs the control center)
+  api/static/        # control-center landing page
   ingestion/         # Phase 2  (placeholder)
   understanding/     # Phase 3  (placeholder)
   resolution_assistant/ # Phase 6 (placeholder)
@@ -59,6 +90,7 @@ data/raw/            # place sample_tickets_v6.json here (git-ignored)
 
 | Target | Description |
 |---|---|
+| `start` / `stop` | Start the full stack (DB + Adminer + API) / stop the containers |
 | `install` | Create the venv and install all dependencies (`uv sync`) |
 | `lock` | Update the uv lockfile |
 | `up` / `down` | Start / stop PostgreSQL + pgvector |

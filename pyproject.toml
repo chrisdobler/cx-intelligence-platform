@@ -34,6 +34,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cxintel"]
+artifacts = ["src/cxintel/api/static/*"]
 
 # --- Ruff (lint + format) -------------------------------------------------
 [tool.ruff]

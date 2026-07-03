@@ -5,18 +5,41 @@
 SHELL := /bin/bash
 
 UV ?= uv
-# Pin Docker to the LOCAL Docker Desktop context so compose never accidentally
-# targets a remote daemon (e.g. an SSH context). Override, e.g.:
-#   make up DOCKER_CONTEXT=default
-DOCKER_CONTEXT ?= desktop-linux
-DOCKER ?= docker --context $(DOCKER_CONTEXT)
-COMPOSE ?= $(DOCKER) compose
 
-.PHONY: help install lock up down db-reset db-health fmt lint lint-fix typecheck test check serve clean ingest understand analyze build-kb chat pipeline
+# Docker context to target. Empty (the committed default) uses whatever context
+# is currently active — portable, works on any machine with a working Docker.
+# If you juggle multiple contexts (e.g. a remote SSH daemon) and want to pin
+# THIS project to one, set DOCKER_CONTEXT without editing this file:
+#   - per command:  make up DOCKER_CONTEXT=desktop-linux
+#   - your shell:    export DOCKER_CONTEXT=desktop-linux
+#   - persistently:  create a git-ignored Makefile.local containing:
+#                        DOCKER_CONTEXT := desktop-linux
+-include Makefile.local
+DOCKER_CONTEXT ?=
+DOCKER := docker $(if $(strip $(DOCKER_CONTEXT)),--context $(strip $(DOCKER_CONTEXT)))
+COMPOSE := $(DOCKER) compose
+
+.PHONY: help start stop install lock up down db-reset db-health fmt lint lint-fix typecheck test check serve clean ingest understand analyze build-kb chat pipeline
 
 help:  ## Show this help.
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
+
+start:  ## Start the full stack (DB + Adminer + API) and open the control center.
+	$(COMPOSE) up -d --wait
+	@echo ""
+	@echo "  Conversation Intelligence Platform is starting."
+	@echo "  ─────────────────────────────────────────────"
+	@echo "  Control center   http://localhost:8000"
+	@echo "  API docs         http://localhost:8000/docs"
+	@echo "  Database UI      http://localhost:8080   (server: db, user/pass/db: cx)"
+	@echo "  ─────────────────────────────────────────────"
+	@echo "  Serving the API (Ctrl-C to stop it, then 'make stop' for the containers)."
+	@echo ""
+	$(UV) run app serve
+
+stop:  ## Stop the containers (DB + Adminer).
+	$(COMPOSE) down
 
 install:  ## Create the virtualenv and install all dependencies (uv sync).
 	$(UV) sync

@@ -35,5 +35,8 @@ data/raw/*
 data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+
+# Local, uncommitted make overrides (e.g. DOCKER_CONTEXT := desktop-linux)
+Makefile.local
 /IMPLEMENTATION_PLAN.md
 /ARCHITECTURE.md

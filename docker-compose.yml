@@ -20,5 +20,17 @@ services:
       retries: 10
       start_period: 15s
 
+  adminer:
+    image: adminer:5
+    container_name: cx-adminer
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    ports:
+      - "${ADMINER_HOST_PORT:-8080}:8080"
+
 volumes:
   pgdata:
