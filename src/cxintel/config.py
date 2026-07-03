@@ -9,7 +9,9 @@ changes. Field names map to upper-case environment variables (for example
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -70,3 +72,23 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return the process-wide settings singleton."""
     return Settings()
+
+
+def set_env_key(name: str, value: str, env_file: Path = Path(".env")) -> None:
+    """Persist ``name=value`` to the local ``.env`` file.
+
+    Replaces the first existing line for ``name`` (including a commented-out
+    ``# NAME=...`` placeholder) and preserves everything else; appends when the
+    key is absent. Creates the file if it does not exist. Callers should clear
+    the :func:`get_settings` cache afterwards for the change to take effect.
+    """
+    pattern = re.compile(rf"^\s*#?\s*{re.escape(name)}\s*=")
+    lines = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
+    new_line = f"{name}={value}"
+    for i, line in enumerate(lines):
+        if pattern.match(line):
+            lines[i] = new_line
+            break
+    else:
+        lines.append(new_line)
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")

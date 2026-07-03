@@ -9,14 +9,16 @@ probe and Swagger stays at ``/docs``. The Resolution Assistant endpoints
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from .. import __version__
-from ..config import get_settings
+from ..config import get_settings, set_env_key
 from ..db import check_health
 from .status import PlatformStatus, build_status
 
@@ -86,3 +88,26 @@ def api_config() -> dict[str, object]:
         "api_host": s.api_host,
         "api_port": s.api_port,
     }
+
+
+class GoogleKeyRequest(BaseModel):
+    """Body for the onboarding save-key endpoint. The key is never echoed back."""
+
+    api_key: str
+
+
+@app.post("/api/config/google-key")
+def set_google_key(body: GoogleKeyRequest) -> dict[str, object]:
+    """Save the Google AI Studio key from the landing-page onboarding card.
+
+    Writes the key to the local ``.env`` only and makes it live in-process
+    (env var + settings-cache clear), so AI capabilities enable without a
+    restart. The response reports status booleans only — never the key.
+    """
+    key = body.api_key.strip()
+    if not key or not key.isprintable() or " " in key:
+        raise HTTPException(status_code=422, detail="API key must be a single non-empty token.")
+    set_env_key("GOOGLE_API_KEY", key)
+    os.environ["GOOGLE_API_KEY"] = key
+    get_settings.cache_clear()
+    return {"saved": True, "ai_configured": get_settings().ai_configured}

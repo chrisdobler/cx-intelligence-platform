@@ -32,7 +32,7 @@ make stop          # stop the containers (Ctrl-C stops the API first)
 Adminer database UI, then serves the API in the foreground and prints the URLs.
 Everything is discoverable from the landing page — no further docs required.
 
-If Google AI Studio has not yet been configured, the landing page will detect the missing `GOOGLE_API_KEY` and guide you through obtaining a free API key. The database, Adminer, API, and documentation remain fully usable without the key; only AI-powered capabilities are disabled until it is configured.
+If Google AI Studio has not yet been configured, the landing page detects the missing `GOOGLE_API_KEY` and shows an **Enable AI Capabilities** card: create a free key at [Google AI Studio](https://aistudio.google.com/apikey), paste it into the card, and click **Save Configuration** — the key is written to your local `.env` and AI capabilities enable immediately, no restart or manual file editing required. The database, Adminer, API, and documentation remain fully usable without the key; only AI-powered capabilities are disabled until it is configured.
 
 Optional: copy `.env.example` to `.env` to override any setting.
 

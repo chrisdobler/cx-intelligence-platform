@@ -66,7 +66,21 @@
       background: #eef1f5; padding: 1px 5px; border-radius: 4px;
     }
     .ai-setup a { color: var(--accent); font-weight: 600; }
-    .ai-setup .note { color: var(--muted); font-size: 13px; margin: 0; }
+    .ai-setup .note { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+    .key-form { display: flex; gap: 8px; margin-top: 12px; max-width: 480px; }
+    .key-form input {
+      flex: 1; font: inherit; padding: 8px 10px; border: 1px solid var(--border);
+      border-radius: 8px; min-width: 0;
+    }
+    .key-form input:focus { outline: none; border-color: var(--accent); }
+    .key-form button {
+      font: inherit; font-weight: 600; padding: 8px 14px; border: none; border-radius: 8px;
+      background: var(--accent); color: #fff; cursor: pointer; white-space: nowrap;
+    }
+    .key-form button:disabled { opacity: .6; cursor: default; }
+    .key-msg { font-size: 13px; margin: 8px 0 0; }
+    .key-msg.ok { color: var(--green); }
+    .key-msg.err { color: var(--red); }
 
     /* Pipeline */
     .stage { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
@@ -212,25 +226,61 @@
       if (ai.configured) {
         el.innerHTML = `<div class="ai-ok">
           <span class="dot ok"></span>
-          <span><span class="name">AI capabilities enabled</span>
-          <span class="detail"> · ${ai.provider} · ${ai.model}</span></span>
+          <span><span class="name">Google AI Studio configured</span>
+          <span class="detail"> · all AI capabilities enabled · ${ai.model}</span></span>
         </div>`;
       } else {
         el.innerHTML = `<div class="ai-setup">
           <span class="dot degraded"></span>
           <div>
-            <h3>Enable AI capabilities</h3>
-            <p class="note">The database, Adminer, API, and docs work without this —
-            only AI generation is disabled until a key is configured.</p>
-            <ol>
-              <li>Get a free key from
-                <a href="${ai.setup_url}" target="_blank" rel="noopener">Google AI Studio</a>.</li>
-              <li>Add <code>GOOGLE_API_KEY=your-key</code> to your <code>.env</code> file.</li>
-              <li>Restart: <code>make stop &amp;&amp; make start</code>.</li>
-            </ol>
+            <h3>Enable AI Capabilities</h3>
+            <p class="note">PostgreSQL, pgvector, Adminer, the API, docs, and this page are
+            fully functional without an API key. Only Conversation Understanding, Knowledge
+            Base generation, Anomaly Detection, and the Resolution Assistant are unavailable
+            until one is configured.</p>
+            <p class="note">Create a free key at
+              <a href="${ai.setup_url}" target="_blank" rel="noopener">Google AI Studio</a>,
+              then paste it below. It is saved only to your local <code>.env</code> file.</p>
+            <form class="key-form" id="key-form">
+              <input type="password" id="ai-key" placeholder="Paste your GOOGLE_API_KEY"
+                autocomplete="off" spellcheck="false" aria-label="Google API key" />
+              <button type="submit" id="ai-save">Save Configuration</button>
+            </form>
+            <p class="key-msg" id="ai-msg"></p>
           </div>
         </div>`;
+        el.querySelector("#key-form").addEventListener("submit", saveKey);
       }
+    }
+
+    async function saveKey(event) {
+      event.preventDefault();
+      const input = document.getElementById("ai-key");
+      const button = document.getElementById("ai-save");
+      const msg = document.getElementById("ai-msg");
+      button.disabled = true;
+      msg.className = "key-msg";
+      msg.textContent = "Saving…";
+      try {
+        const res = await fetch("/api/config/google-key", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ api_key: input.value }),
+        });
+        const data = await res.json();
+        if (res.ok && data.ai_configured) {
+          input.value = "";
+          await load(); // re-render: card flips to configured, no restart needed
+          return;
+        }
+        msg.className = "key-msg err";
+        msg.textContent = typeof data.detail === "string"
+          ? data.detail : "Could not save the API key. Please check it and try again.";
+      } catch (e) {
+        msg.className = "key-msg err";
+        msg.textContent = "Could not reach the API. Is the server running?";
+      }
+      button.disabled = false;
     }
 
     function renderPipeline(stages) {

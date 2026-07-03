@@ -38,5 +38,3 @@ data/processed/*
 
 # Local, uncommitted make overrides (e.g. DOCKER_CONTEXT := desktop-linux)
 Makefile.local
-/IMPLEMENTATION_PLAN.md
-/ARCHITECTURE.md
