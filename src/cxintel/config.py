@@ -37,9 +37,11 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="gemini-2.5-flash")
 
     # --- Embeddings — used from Phase 5 ----------------------------------
-    embedding_provider: str = Field(default="local", description="local | voyage | openai")
-    embedding_model: str = Field(default="BAAI/bge-small-en-v1.5")
-    embedding_dim: int = Field(default=384)
+    embedding_provider: str = Field(
+        default="google", description="google | local | voyage | openai"
+    )
+    embedding_model: str = Field(default="gemini-embedding-001")
+    embedding_dim: int = Field(default=3072)
 
     # --- Anomaly alerts — used from Phase 4 ------------------------------
     slack_webhook_url: str | None = Field(default=None)
