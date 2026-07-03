@@ -111,6 +111,14 @@ For each extracted issue:
 
 5. Indicate whether the issue matched an existing catalog entry.
 
+6. For every extracted issue populate:
+
+   - catalog.matched
+   - catalog.confidence
+
+The catalog object communicates whether the issue was successfully normalized
+against the current operational taxonomy.
+
 Novel issue categories become one of the inputs to the anomaly detection
 pipeline.
 

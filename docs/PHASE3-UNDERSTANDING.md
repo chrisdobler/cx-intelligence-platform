@@ -137,6 +137,10 @@ Suggested schema:
       "symptoms": [
         "..."
       ],
+      "catalog": {
+        "matched": true,
+        "confidence": 0.98
+      },
       "resolution_status": "resolved",
       "resolution_summary": "..."
     }
@@ -188,6 +192,8 @@ Examples:
 | customer_impact | Reporting |
 | product | Analytics |
 | symptoms | Future Retrieval |
+| catalog.matched | Issue Catalog / Anomaly Detection |
+| catalog.confidence | Taxonomy Quality |
 | resolution_summary | Knowledge Base |
 | resolution_type | Analytics |
 | analysis_confidence | Evaluation |
@@ -471,6 +477,7 @@ Version 1 should include:
 - customer_impact
 - product
 - symptoms
+- catalog
 - resolution_status
 - resolution_summary
 
