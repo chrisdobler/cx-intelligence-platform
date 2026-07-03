@@ -39,11 +39,14 @@ The emphasis is on engineering judgment rather than model complexity. Every arch
           Structured Conversation Object
                         │
                         ▼
-        Structured Conversation Store
-                 │                 │
-                 │                 │
-                 ▼                 ▼
-        Anomaly Detection     Knowledge Base
+       ConversationAnalysis (JSONB)
+                 │
+                 ▼
+       Relational Projections
+      (ConversationIssue, ...)
+           │             │
+           ▼             ▼
+   Anomaly Detection   Knowledge Base
                  │                 │
                  ▼                 ▼
           Slack Alerts     Retrieval Pipeline
@@ -111,9 +114,17 @@ yet implemented.
 
 Execution is deliberately simple: one in-process background worker runs one
 job at a time, and the control center polls the status endpoint while a job is
-active. Run state and last-execution records are kept in memory — a message
-queue or durable run-history table is not justified at this scale (see the
-complexity budget); durable run history is listed under Future Enhancements.
+active. The in-flight job snapshot is in-memory UI state; a message queue is
+not justified at this scale (see the complexity budget).
+
+**Pipeline auditing.** Every stage execution is durably recorded in the
+`pipeline_runs` table: which stage ran, when, what triggered it (API or CLI),
+how long it took, and how it ended (summary on success, error on failure). A
+`running` row is written before the stage executes, so a crashed process
+leaves evidence rather than vanishing from history. This audit trail feeds the
+stage cards' last-run display, the Recent Runs panel, `GET
+/api/pipeline/runs`, and the `app runs` CLI command — and it is the anchor for
+per-AI-call observability (model, latency, token usage) planned in Phase 7.
 
 ---
 
@@ -232,10 +243,10 @@ Potential production improvements:
 - cross-encoder reranking
 - evaluation datasets
 - prompt versioning
-- audit logging
+- per-AI-call observability (model, latency, token usage — Phase 7, building
+  on the `pipeline_runs` audit trail)
 - human feedback loops
 - automated regression testing
 - tool calling
 - background workers
-- durable pipeline run history (runs are tracked in memory today)
 - streaming responses

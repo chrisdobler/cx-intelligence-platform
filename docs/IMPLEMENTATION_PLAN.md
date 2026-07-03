@@ -53,23 +53,38 @@ All conversations are available in PostgreSQL.
 
 ## Objectives
 
-Build an LLM extraction pipeline that produces structured JSON for every conversation.
+Build an LLM extraction pipeline that produces the canonical
+Structured Conversation Object for every conversation.
 
-Extract:
+The Conversation Understanding pipeline is the heart of the platform.
 
-- summary
-- primary issue
-- secondary issues
-- severity
-- products
-- resolution summary
-- confidence
+Responsibilities:
 
-Persist the results back into PostgreSQL.
+- Process one conversation at a time.
+- Invoke Gemini.
+- Produce a Structured Conversation Object.
+- Validate the response using Pydantic.
+- Persist the canonical JSON unchanged into
+  ConversationAnalysis.analysis_json.
+- Generate relational projections from that JSON (initially
+  ConversationIssue).
+
+The Structured Conversation Object becomes the canonical AI artifact for every
+downstream component.
+
+Do not allow downstream components to independently reinterpret raw
+conversations.
 
 Deliverable:
 
-Every conversation has a normalized AI-generated representation.
+Every imported conversation has:
+
+- a validated Structured Conversation Object
+- a persisted ConversationAnalysis record
+- one or more ConversationIssue projections
+
+These artifacts become the inputs to anomaly detection, retrieval,
+evaluation, and future AI capabilities.
 
 ---
 
@@ -198,8 +213,12 @@ respecting the complexity budget):
   REST API (`POST /api/pipeline/{stage}/run`, `POST /api/pipeline/run`), and
   the landing page all call this one layer — no duplicated business logic.
 - Background execution: one in-process worker, one job at a time; the page
-  polls status while a job runs. Run state is in memory (durable run history
-  is future work).
+  polls status while a job runs.
+- **Pipeline auditing**: every stage execution is durably recorded in the
+  `pipeline_runs` table (stage, trigger source, timing, outcome; a `running`
+  row is written up front so crashes leave evidence). Surfaced via the Recent
+  Runs panel, `GET /api/pipeline/runs`, and `app runs`. Phase 7's per-AI-call
+  metrics (model, latency, token usage) will build on this audit trail.
 
 ### Onboarding / AI setup
 

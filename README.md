@@ -66,6 +66,10 @@ not just observed:
   dependency order, skipping completed stages (completion is derived from the
   data, so nothing reruns unnecessarily) and stopping cleanly at the first
   blocked or not-yet-implemented stage.
+- **Recent Runs** — the pipeline audit trail: every stage execution is
+  durably recorded (stage, trigger source, timing, outcome — including
+  failures) and the latest runs are shown here. Also available via
+  `GET /api/pipeline/runs` and `app runs`.
 - **AI onboarding** — if `GOOGLE_API_KEY` is missing, the Enable AI
   Capabilities card accepts a key via a password-style input and saves it to
   your local `.env` (never echoed back); AI-stage prerequisites flip to met
@@ -85,6 +89,7 @@ Endpoints:
 | `/api/status` | Services, AI, stage cards, job state, metrics (backs the landing page) |
 | `POST /api/pipeline/run` | Run every incomplete pipeline stage in dependency order |
 | `POST /api/pipeline/{stage}/run` | Run a single pipeline stage in the background |
+| `GET /api/pipeline/runs` | Pipeline audit trail — recent stage runs, newest first |
 | `/api/config` | Non-secret configuration (secrets reported only as set/unset) |
 | `POST /api/config/google-key` | Save the Google AI Studio key from the onboarding card |
 | `http://localhost:8080` | Adminer database UI (auto-login to dev database `cx`) |
@@ -147,6 +152,7 @@ app serve
 app ingest         # import the dataset (idempotent; applies migrations first)
 app stats          # ingestion statistics — verifies the import
 app pipeline       # run every incomplete pipeline stage in dependency order
+app runs           # pipeline audit trail — recent stage runs, newest first
 # Stubs until their phase:
 app understand | app analyze | app build-kb | app chat
 ```
