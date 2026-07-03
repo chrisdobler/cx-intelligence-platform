@@ -32,7 +32,7 @@ start:  ## Start the full stack (DB + Adminer + API) and open the control center
 	@echo "  ─────────────────────────────────────────────"
 	@echo "  Control center   http://localhost:8000"
 	@echo "  API docs         http://localhost:8000/docs"
-	@echo "  Database UI      http://localhost:8080   (server: db, user/pass/db: cx)"
+	@echo "  Database UI      http://localhost:8080   (auto-login to cx)"
 	@echo "  ─────────────────────────────────────────────"
 	@echo "  Serving the API (Ctrl-C to stop it, then 'make stop' for the containers)."
 	@echo ""

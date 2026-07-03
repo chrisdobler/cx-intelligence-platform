@@ -29,6 +29,15 @@ services:
         condition: service_healthy
     environment:
       ADMINER_DEFAULT_SERVER: db
+      ADMINER_AUTOLOGIN: "${ADMINER_AUTOLOGIN:-1}"
+      ADMINER_AUTOLOGIN_DRIVER: pgsql
+      ADMINER_AUTOLOGIN_SERVER: db
+      ADMINER_AUTOLOGIN_USERNAME: cx
+      ADMINER_AUTOLOGIN_PASSWORD: cx
+      ADMINER_AUTOLOGIN_DATABASE: cx
+    command: ["php", "-S", "[::]:8080", "-t", "/var/www/html", "/var/www/autologin-router.php"]
+    volumes:
+      - ./docker/adminer/autologin-router.php:/var/www/autologin-router.php:ro
     ports:
       - "${ADMINER_HOST_PORT:-8080}:8080"
 
