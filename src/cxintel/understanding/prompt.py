@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..models import Conversation, IssueCatalogEntry, Message
 
-PROMPT_VERSION = "1.0"
+PROMPT_VERSION = "1.1"
 
 _INSTRUCTIONS = """\
 You are an information extraction engine for a customer support platform.
@@ -25,9 +25,9 @@ Extraction rules:
 1. Identify EVERY distinct operational issue the customer experienced. A
    conversation may contain zero, one, or many issues. Do not merge distinct
    problems into one issue; do not invent issues that are not discussed.
-2. For each issue, give a short normalized lowercase canonical_name for the
-   issue category (e.g. "base water leak"), and preserve the customer's own
-   wording verbatim in customer_description.
+2. For each issue, choose a short lowercase canonical_name for the stable
+   operational issue category (e.g. "pod overheating" or "base water leak"),
+   and preserve the customer's own wording verbatim in customer_description.
 3. Extract concrete symptoms as evidence — quote or closely paraphrase the
    conversation. Never fabricate evidence.
 4. Score confidence honestly on a 0-1 scale: how certain you are that the
@@ -45,12 +45,37 @@ Issue catalog normalization:
 
 {catalog_block}
 
-For every issue populate catalog.matched and catalog.confidence:
-- Prefer an existing catalog category whenever it accurately represents the
-  customer's problem, and reuse its exact canonical_name (matched = true).
-- If no existing category is appropriate, create a new canonical_name that
-  describes the problem well (matched = false). Never force an issue into an
-  unrelated category.
+Treat issue extraction as a classification task rather than a naming task.
+
+Your objective is to classify customer problems into stable operational
+reporting categories.
+
+For every issue:
+
+- Populate catalog.matched and catalog.confidence.
+- Reuse an existing catalog category whenever it accurately represents the
+  customer's problem.
+- Reuse the catalog's exact canonical_name when matched.
+- Preserve the customer's original wording separately as
+  customer_description.
+- Avoid creating a new canonical category when an existing category is an
+  appropriate fit.
+- Create a new canonical category only when no existing category accurately
+  represents the customer's issue.
+- Never force an issue into an unrelated category.
+
+Canonical issue names should be:
+
+- short
+- lowercase
+- stable over time
+- appropriate for reporting and analytics
+- independent of customer wording whenever practical
+
+Differences in wording, symptoms, firmware revisions, or product revisions
+should generally become attributes of an issue rather than new canonical issue
+names, unless those differences represent genuinely different operational
+problems.
 """
 
 _EMPTY_CATALOG = """\

@@ -436,6 +436,23 @@ taxonomy over time.
 This separation allows taxonomy evolution without coupling it to prompt
 behavior or a specific LLM provider.
 
+### Version 1 Canonicalization
+
+For Version 1 of this project, canonicalization is performed directly by the
+LLM during Conversation Understanding.
+
+The prompt receives the current Issue Catalog and is responsible for
+normalizing extracted issues into stable operational categories whenever an
+appropriate category already exists.
+
+This implementation intentionally favors simplicity over introducing a
+dedicated taxonomy-matching service.
+
+Future versions may move canonicalization into an independent platform
+component without changing downstream consumers because the remainder of the
+pipeline operates exclusively on the canonical Structured Conversation Object
+and its relational projections.
+
 ---
 
 # ADR-012 — Multi-Signal Anomaly Detection
@@ -473,3 +490,78 @@ than opaque scores.
 This approach introduces additional rules but produces deterministic,
 explainable anomalies while keeping the detection engine independent of the
 LLM.
+
+---
+
+# ADR-013 — Conversation Isolation
+
+## Decision
+
+Treat one customer conversation as the fundamental unit of AI processing.
+
+Each LLM invocation is responsible for producing exactly one
+StructuredConversation from exactly one Conversation.
+
+Do not batch multiple conversations into a single prompt.
+
+If higher throughput becomes necessary, prefer provider-native batch execution
+over changing the canonical processing model.
+
+## Reasoning
+
+The architecture is intentionally built around a one-to-one relationship:
+
+Conversation
+
+↓
+
+StructuredConversation
+
+↓
+
+ConversationAnalysis
+
+↓
+
+ConversationIssue
+
+Maintaining this invariant preserves:
+
+- deterministic retries
+- idempotent processing
+- resumable pipeline execution
+- precise audit trails
+- simple progress reporting
+- failure isolation
+
+Every conversation remains independently executable, independently recoverable,
+and independently observable.
+
+## Alternatives Considered
+
+### Multi-conversation prompts
+
+Rejected because:
+
+- a malformed response could invalidate multiple conversations
+- retries become coarse-grained
+- audit trails become ambiguous
+- progress reporting becomes less precise
+- conversation ordering becomes significant
+
+### Provider-native Batch Execution
+
+Preferred future optimization.
+
+Provider-native batch APIs preserve the one-conversation processing model while
+reducing network overhead and improving throughput.
+
+## Tradeoffs
+
+Processing one conversation per request results in more HTTP requests and
+longer wall-clock execution.
+
+However, the architecture remains significantly simpler and more robust.
+
+Performance improvements should occur at the provider execution layer rather
+than by changing the platform's fundamental processing model.

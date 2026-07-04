@@ -265,6 +265,9 @@ This project intentionally favors a cohesive architecture over distributed compl
 
 Potential production improvements:
 
+- platform-owned taxonomy matching service
+- embedding-assisted issue canonicalization
+- human taxonomy approval workflow
 - cross-encoder reranking
 - evaluation datasets
 - prompt versioning
