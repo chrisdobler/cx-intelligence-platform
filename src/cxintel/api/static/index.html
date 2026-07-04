@@ -161,6 +161,12 @@
     .prereqs .mark { display: inline-block; width: 16px; }
     .stage-card .foot { display: flex; align-items: center; gap: 10px; margin-top: auto; flex-wrap: wrap; }
     .stage-card .reason { color: var(--muted); font-size: 12.5px; }
+    .derived-empty { display: none; margin-top: 12px; border-color: #fecdca; background: #fffafa; }
+    .derived-empty.active { display: block; }
+    .derived-empty .empty-title { font-weight: 700; }
+    .derived-empty .empty-copy { margin: 4px 0 12px; color: var(--muted); font-size: 13px; }
+    .derived-empty .empty-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .derived-empty .empty-note { color: var(--muted); font-size: 12.5px; }
 
     /* Anomaly Analysis (inline, inside the Anomaly Detection stage card) */
     .stage-card.expanded { grid-column: 1 / -1; }
@@ -173,9 +179,13 @@
       color: var(--muted); margin: 18px 0 10px; font-weight: 600;
     }
     .trend-chart { width: 100%; height: auto; display: block; }
-    .trend-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 12.5px; color: var(--muted); }
-    .trend-legend .li { display: inline-flex; align-items: center; gap: 6px; }
-    .trend-legend .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+    .timeline-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .timeline-pill {
+      font: inherit; font-size: 12.5px; font-weight: 600; padding: 4px 10px;
+      border: 1px solid var(--border); border-radius: 999px; background: var(--card);
+      color: var(--muted); cursor: pointer;
+    }
+    .timeline-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
     .anomaly-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
     @media (max-width: 720px) { .anomaly-cards { grid-template-columns: 1fr; } }
     .anomaly-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
@@ -195,6 +205,7 @@
     .anomaly-card .why { margin: 0; color: var(--muted); font-size: 13px; }
     .anomaly-action { border-left: 3px solid var(--accent); background: #f6f7f9; border-radius: 6px; padding: 8px 10px; font-size: 13px; }
     .anomaly-action .k { font-weight: 700; }
+    .anomaly-more { margin-top: 12px; display: flex; justify-content: center; }
     .anomaly-empty { color: var(--muted); font-size: 13px; }
     .raw-report summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--muted); }
     .raw-report[open] summary { margin-bottom: 8px; }
@@ -349,6 +360,7 @@
         <div class="flow" id="stage-flow"></div>
       </div>
       <div class="grid cols-2" id="stage-cards" style="margin-top:12px;"></div>
+      <div class="card derived-empty" id="derived-empty"></div>
       <div class="card" style="margin-top:12px;">
         <div class="grid cols-2" id="metrics"></div>
       </div>
@@ -594,6 +606,12 @@
       return null;
     }
 
+    function datasetImported(stages) {
+      const understand = stages.find((st) => st.key === "understand");
+      const imported = understand?.prerequisites.find((p) => p.label === "Dataset imported");
+      return Boolean(imported && imported.met);
+    }
+
     function renderStageCards(stages, job) {
       const busy = job && job.state === "running";
       const activeStage = busy && job.progress_detail ? job.progress_detail.stage_key : null;
@@ -615,11 +633,15 @@
         if (st.action === "open" && st.open_url && !disabled) {
           button = `<a class="btn" href="${st.open_url}">Open</a>`;
         } else if (st.run_options && st.run_options.length && st.action !== "open") {
-          button = st.run_options.map((opt) =>
+          button = st.run_options.filter((opt) => opt.value !== "retry_failures").map((opt) =>
             `<button class="btn" data-stage="${st.key}" data-option="${opt.value}" ${disabled ? "disabled" : ""}>${opt.label}</button>`
           ).join("");
         } else {
           button = `<button class="btn" data-stage="${st.key}" data-action="${st.action}" ${disabled ? "disabled" : ""}>${ACTION_LABELS[st.action] ?? "Run"}</button>`;
+        }
+        if (st.key === "understand") {
+          const importDisabled = busy || !datasetImported(stages);
+          button += `<button class="btn" data-import-derived="1" ${importDisabled ? "disabled" : ""}>Import Pre-generated AI Dataset</button>`;
         }
         // The anomaly card always carries its full-width analysis inline.
         const isAnomaly = st.key === "anomaly";
@@ -644,6 +666,9 @@
       for (const btn of el.querySelectorAll("button[data-stage]")) {
         btn.addEventListener("click", () =>
           runStage(btn.getAttribute("data-stage"), btn.getAttribute("data-option")));
+      }
+      for (const btn of el.querySelectorAll("button[data-import-derived]")) {
+        btn.addEventListener("click", importDerived);
       }
       injectAnomalyPanel();
     }
@@ -743,8 +768,38 @@
     const runStage = (key, option) => postRun(
       option ? `/api/pipeline/${key}/run?option=${encodeURIComponent(option)}` : `/api/pipeline/${key}/run`
     );
+    const importDerived = () => postRun("/api/pipeline/import-derived");
     document.getElementById("run-remaining").addEventListener("click", () =>
       postRun("/api/pipeline/run"));
+
+    function renderDerivedEmpty(metrics, job, stages, derivedImport) {
+      const el = document.getElementById("derived-empty");
+      const imported = metrics.imported_conversations || 0;
+      const derivedTotal = (metrics.processed_conversations || 0)
+        + (metrics.conversation_issue_count || 0)
+        + (metrics.issue_catalog_count || 0)
+        + (metrics.embedding_count || 0)
+        + (metrics.anomaly_count || 0);
+      if (!imported || derivedTotal > 0) {
+        el.className = "card derived-empty";
+        el.innerHTML = "";
+        return;
+      }
+      const busy = job && job.state === "running";
+      const importDisabled = busy || !datasetImported(stages);
+      el.className = "card derived-empty active";
+      el.innerHTML = `
+        <div class="empty-title">No AI-generated data is currently available.</div>
+        <p class="empty-copy">Generate it with Conversation Understanding, or restore the supplied pre-generated AI dataset to explore downstream stages immediately.</p>
+        <div class="empty-actions">
+          <button class="btn" id="empty-run-understand" ${busy ? "disabled" : ""}>Run Conversation Understanding</button>
+          <button class="btn primary" id="empty-import-derived" ${importDisabled ? "disabled" : ""}>Import Pre-generated AI Dataset</button>
+          <span class="empty-note">${esc(derivedImport.message)}</span>
+        </div>`;
+      el.querySelector("#empty-run-understand").addEventListener("click", () =>
+        runStage("understand", "sample"));
+      el.querySelector("#empty-import-derived").addEventListener("click", importDerived);
+    }
 
     async function resetDerivedData() {
       const message = `This will permanently delete all AI-generated artifacts.
@@ -755,6 +810,7 @@ The following tables will be cleared:
 • conversation_issues
 • issue_catalog
 • anomalies
+• knowledge_documents
 
 Imported conversations and messages will NOT be modified.`;
       if (!window.confirm(message)) return;
@@ -834,42 +890,60 @@ Imported conversations and messages will NOT be modified.`;
     /* --- Anomaly Analysis panel (always shown inside the anomaly card) --- */
     let anomalyPanelHTML = "";   // cached markup, re-injected after every re-render
     let rawReportOpen = false;   // <details> state survives destructive re-renders
+    let anomaliesExpanded = false;
+    let anomalyPanelData = null;
+    let selectedAnomalyIssue = null;      // which anomaly's timeline is plotted
+    const timelineCache = new Map();      // issue → timeline payload (null while loading)
+    const ANOMALY_INITIAL_VISIBLE = 2;
     const TREND_COLORS = ["#1f2a44", "#f04438", "#f79009", "#12b76a", "#7a5af8"];
     const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
     const fmtSignal = (s) =>
       s.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
     const fmtDateTime = (v) => v ? new Date(v).toLocaleString() : "unavailable";
+    const fmtHourUTC = (ms) => `${String(new Date(ms).getUTCHours()).padStart(2, "0")}:00`;
 
-    function trendChartSVG(trends) {
-      const { days, series } = trends;
-      if (!days.length || !series.length) return "";
-      const W = 920, H = 240, L = 44, R = 12, T = 12, B = 30;
-      const maxCount = Math.max(1, ...series.flatMap((s) => s.counts));
-      const x = (i) => days.length === 1
-        ? L + (W - L - R) / 2
-        : L + (W - L - R) * (i / (days.length - 1));
+    function timelineChartSVG(timeline) {
+      const points = timeline.points || [];
+      if (!points.length) return "";
+      const W = 920, H = 240, L = 44, R = 12, T = 24, B = 30;
+      const n = points.length;
+      const maxCount = Math.max(1, ...points.map((p) => p.count));
+      const x = (i) => n === 1 ? L + (W - L - R) / 2 : L + (W - L - R) * (i / (n - 1));
       const y = (v) => T + (H - T - B) * (1 - v / maxCount);
+      const t0 = new Date(points[0].t).getTime();
+      const stepMs = (timeline.bucket_seconds || 3600) * 1000;
+      const dayStarts = Object.entries(timeline.day_starts || {})
+        .map(([day, iso]) => ({ day, ms: new Date(iso).getTime() }))
+        .sort((a, b) => a.ms - b.ms);
+      const dayFor = (ms) => {
+        let day = "";
+        for (const s of dayStarts) if (s.ms <= ms) day = s.day;
+        return day;
+      };
       const ticks = [...new Set([0, Math.round(maxCount / 2), maxCount])];
       const grid = ticks.map((t) =>
         `<line x1="${L}" y1="${y(t)}" x2="${W - R}" y2="${y(t)}" stroke="#e4e7ec"/>
          <text x="${L - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="#667085">${t}</text>`
       ).join("");
-      const xLabels = days.map((d, i) =>
-        `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="#667085">Day ${d}</text>`
+      const labelEvery = Math.max(1, Math.ceil(n / 8));
+      const xLabels = points.map((p, i) => (i % labelEvery)
+        ? ""
+        : `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="#667085">${fmtHourUTC(new Date(p.t).getTime())}</text>`
       ).join("");
-      const lines = series.map((s, si) => {
-        const color = TREND_COLORS[si % TREND_COLORS.length];
-        const points = s.counts.map((v, i) => `${x(i)},${y(v)}`).join(" ");
-        const dots = s.counts.map((v, i) =>
-          `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="${color}"><title>${esc(s.issue)} — Day ${days[i]}: ${v}</title></circle>`
-        ).join("");
-        return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2"/>${dots}`;
+      const tEnd = t0 + (n - 1) * stepMs;
+      const dayMarkers = dayStarts.filter((s) => s.ms >= t0 && s.ms <= tEnd).map((s) => {
+        const xi = n === 1 ? x(0) : L + (W - L - R) * (((s.ms - t0) / stepMs) / (n - 1));
+        return `<line x1="${xi}" y1="${T - 6}" x2="${xi}" y2="${H - B}" stroke="#98a2b3" stroke-dasharray="4 3"/>
+          <text x="${xi + 4}" y="${T + 4}" font-size="11" font-weight="600" fill="#667085">Day ${esc(s.day)}</text>`;
       }).join("");
-      const legend = series.map((s, si) =>
-        `<span class="li"><span class="swatch" style="background:${TREND_COLORS[si % TREND_COLORS.length]}"></span>${esc(s.issue)}</span>`
-      ).join("");
-      return `<svg class="trend-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Issue frequency by day">${grid}${xLabels}${lines}</svg>
-        <div class="trend-legend">${legend}</div>`;
+      const color = TREND_COLORS[0];
+      const line = points.map((p, i) => `${x(i)},${y(p.count)}`).join(" ");
+      const dots = points.map((p, i) => {
+        const ms = new Date(p.t).getTime();
+        const day = dayFor(ms);
+        return `<circle cx="${x(i)}" cy="${y(p.count)}" r="2.5" fill="${color}"><title>${day ? `Day ${esc(day)} ` : ""}${fmtHourUTC(ms)} — ${p.count}</title></circle>`;
+      }).join("");
+      return `<svg class="trend-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Hourly issue frequency timeline">${grid}${dayMarkers}${xLabels}<polyline points="${line}" fill="none" stroke="${color}" stroke-width="2"/>${dots}</svg>`;
     }
 
     function anomalyCardHTML(a) {
@@ -903,28 +977,117 @@ Imported conversations and messages will NOT be modified.`;
         details.open = rawReportOpen;
         details.addEventListener("toggle", () => { rawReportOpen = details.open; });
       }
+      const moreButton = el.querySelector("button[data-anomaly-more]");
+      if (moreButton) {
+        moreButton.addEventListener("click", () => {
+          anomaliesExpanded = !anomaliesExpanded;
+          if (anomalyPanelData) {
+            renderAnomalyPanel(anomalyPanelData.anomalies, anomalyPanelData.report);
+          }
+        });
+      }
+      el.querySelectorAll("button[data-timeline-issue]").forEach((pill) => {
+        pill.addEventListener("click", () => {
+          selectedAnomalyIssue = pill.dataset.timelineIssue;
+          if (anomalyPanelData) {
+            renderAnomalyPanel(anomalyPanelData.anomalies, anomalyPanelData.report);
+          }
+        });
+      });
+    }
+
+    async function fetchTimeline(issue) {
+      if (timelineCache.has(issue)) return;
+      timelineCache.set(issue, null); // loading marker
+      let timeline = { points: [], day_starts: {} };
+      try {
+        const res = await fetch(`/api/anomalies/timeline?issue=${encodeURIComponent(issue)}`);
+        timeline = await res.json();
+      } catch (e) { /* rendered as "no timeline data" */ }
+      timelineCache.set(issue, timeline);
+      if (anomalyPanelData && selectedAnomalyIssue === issue) {
+        renderAnomalyPanel(anomalyPanelData.anomalies, anomalyPanelData.report);
+      }
+    }
+
+    function renderAnomalyPanel(anomalies, report) {
+      anomalyPanelData = { anomalies, report };
+      const ordered = [...anomalies].sort((a, b) =>
+        (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9)
+        || Math.abs(b.metrics.percent_change ?? 0) - Math.abs(a.metrics.percent_change ?? 0));
+      const visibleAnomalies = anomaliesExpanded
+        ? ordered
+        : ordered.slice(0, ANOMALY_INITIAL_VISIBLE);
+      const hiddenCount = Math.max(0, ordered.length - ANOMALY_INITIAL_VISIBLE);
+      const moreControl = hiddenCount
+        ? `<div class="anomaly-more">
+            <button class="btn" type="button" data-anomaly-more="1" aria-expanded="${anomaliesExpanded}">
+              ${anomaliesExpanded ? "Show fewer" : `Show ${hiddenCount} more`}
+            </button>
+          </div>`
+        : "";
+      // One pill per anomaly issue (ordered like the cards); the chart plots
+      // only the selected one — a timeline, not a multi-series dashboard.
+      const pillAnomalies = ordered.filter(
+        (a, i) => ordered.findIndex((b) => b.issue === a.issue) === i);
+      if (!selectedAnomalyIssue || !pillAnomalies.some((a) => a.issue === selectedAnomalyIssue)) {
+        selectedAnomalyIssue = pillAnomalies.length ? pillAnomalies[0].issue : null;
+      }
+      const pills = pillAnomalies.map((a) =>
+        `<button class="timeline-pill${a.issue === selectedAnomalyIssue ? " active" : ""}" type="button"
+           data-timeline-issue="${esc(a.issue)}" aria-pressed="${a.issue === selectedAnomalyIssue}">
+           ${esc(a.issue)} — Day ${a.day}</button>`
+      ).join("");
+      const timeline = selectedAnomalyIssue ? timelineCache.get(selectedAnomalyIssue) : undefined;
+      if (selectedAnomalyIssue && timeline === undefined) fetchTimeline(selectedAnomalyIssue);
+      const chart = (timeline === undefined || timeline === null)
+        ? `<p class="anomaly-empty">Loading timeline…</p>`
+        : (timelineChartSVG(timeline) || `<p class="anomaly-empty">No timeline data available.</p>`);
+      anomalyPanelHTML = `
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Anomaly Analysis</div>
+            <div class="panel-sub">${anomalies.length} anomalies detected vs the Day-1 baseline</div>
+          </div>
+        </div>
+        <h3>Issue Frequency Timeline (hourly)</h3>
+        <div class="timeline-pills">${pills}</div>
+        ${chart}
+        <h3>Detected Anomalies</h3>
+        <div class="anomaly-cards">${visibleAnomalies.map(anomalyCardHTML).join("")}</div>
+        ${moreControl}
+        <h3>Raw Report
+          <a class="raw-link" href="/api/anomalies/report" target="_blank" rel="noopener">open raw ↗</a>
+        </h3>
+        <details class="raw-report">
+          <summary>Show the generated markdown report</summary>
+          <pre>${esc(report)}</pre>
+        </details>`;
+      injectAnomalyPanel();
     }
 
     async function loadAnomalyPanel() {
-      let trends, anomalies, report, runs;
+      let anomalies, report, runs;
+      timelineCache.clear(); // fresh detection run → fresh timelines
       try {
-        const [tRes, aRes, rRes, runsRes] = await Promise.all([
-          fetch("/api/anomalies/trends"),
+        const [aRes, rRes, runsRes] = await Promise.all([
           fetch("/api/anomalies"),
           fetch("/api/anomalies/report"),
           fetch("/api/pipeline/runs?limit=20"),
         ]);
-        trends = await tRes.json();
         anomalies = await aRes.json();
         report = await rRes.text();
         runs = await runsRes.json();
       } catch (e) {
+        anomalyPanelData = null;
         anomalyPanelHTML = `<div class="panel-title">Anomaly Analysis</div>
           <p class="anomaly-empty">Could not load anomaly data — is the API reachable?</p>`;
         injectAnomalyPanel();
         return;
       }
       if (!anomalies.length) {
+        anomalyPanelData = null;
+        anomaliesExpanded = false;
         // Explain the "ran for 0 seconds" case: the last run's own summary
         // (e.g. "Only the baseline day is analyzed") tells the operator why.
         const lastRun = runs.find((r) => r.stage_key === "anomaly" && r.status !== "running");
@@ -941,28 +1104,7 @@ Imported conversations and messages will NOT be modified.`;
         injectAnomalyPanel();
         return;
       }
-      const ordered = [...anomalies].sort((a, b) =>
-        (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9)
-        || Math.abs(b.metrics.percent_change ?? 0) - Math.abs(a.metrics.percent_change ?? 0));
-      anomalyPanelHTML = `
-        <div class="panel-head">
-          <div>
-            <div class="panel-title">Anomaly Analysis</div>
-            <div class="panel-sub">${anomalies.length} anomalies detected vs the Day-1 baseline</div>
-          </div>
-        </div>
-        <h3>Issue Frequency by Day</h3>
-        ${trendChartSVG(trends) || `<p class="anomaly-empty">No trend data available.</p>`}
-        <h3>Detected Anomalies</h3>
-        <div class="anomaly-cards">${ordered.map(anomalyCardHTML).join("")}</div>
-        <h3>Raw Report
-          <a class="raw-link" href="/api/anomalies/report" target="_blank" rel="noopener">open raw ↗</a>
-        </h3>
-        <details class="raw-report">
-          <summary>Show the generated markdown report</summary>
-          <pre>${esc(report)}</pre>
-        </details>`;
-      injectAnomalyPanel();
+      renderAnomalyPanel(anomalies, report);
     }
 
     document.getElementById("action-anomalies").addEventListener("click", () => {
@@ -1147,6 +1289,7 @@ Imported conversations and messages will NOT be modified.`;
         renderAI(data.ai);
         renderStageCards(data.pipeline, data.job);
         renderJob(data.job, data.pipeline);
+        renderDerivedEmpty(data.metrics, data.job, data.pipeline, data.derived_import);
         renderMetrics(data.metrics);
         await loadRuns();
         const running = Boolean(data.job && data.job.state === "running");

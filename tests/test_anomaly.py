@@ -13,8 +13,19 @@ from sqlalchemy.orm import Session, sessionmaker
 from cxintel.anomaly.schema import SlackAlert
 from cxintel.anomaly.service import AnomalyService
 from cxintel.llm import LLMExtractionError
-from cxintel.models import Anomaly, ConversationAnalysis, ConversationIssue, IssueCatalogEntry
-from cxintel.repositories import AnomalyRepository
+from cxintel.models import (
+    Anomaly,
+    Conversation,
+    ConversationAnalysis,
+    ConversationIssue,
+    IssueCatalogEntry,
+    PipelineRun,
+)
+from cxintel.repositories import (
+    AnomalyRepository,
+    AnomalyStageObservationRepository,
+    ConversationIssueRepository,
+)
 
 from .test_understanding import seed_conversation
 
@@ -42,8 +53,11 @@ def seed_issue(
     severity: str = "medium",
     resolution_status: str = "resolved",
     matched: bool = True,
+    started_at: datetime | None = None,
 ) -> None:
     conv_id = seed_conversation(session, external_id, day, f"text {external_id}")
+    if started_at is not None:
+        session.get(Conversation, conv_id).started_at = started_at  # type: ignore[union-attr]
     now = datetime(2026, 7, 3, tzinfo=UTC)
     # An analysis row marks the conversation as understood (stage prerequisite).
     session.merge(
@@ -102,22 +116,47 @@ def seed_spike_scenario(session: Session) -> None:
     seed_issue(session, "d2_novel", 2, "ghost noises", matched=False)
 
 
+def seed_anomaly_pipeline_run(session: Session) -> uuid.UUID:
+    run_id = uuid.uuid4()
+    session.add(
+        PipelineRun(
+            id=run_id,
+            stage_key="anomaly",
+            status="running",
+            trigger="cli",
+            started_at=datetime(2026, 7, 3, 10, 0, tzinfo=UTC),
+            finished_at=None,
+            duration_seconds=None,
+            summary=None,
+            error=None,
+        )
+    )
+    session.commit()
+    return run_id
+
+
 @pytest.fixture
 def factory(settings_on_test_db: str, migrated_engine: Any, db_session: Session) -> Any:
     return sessionmaker(bind=migrated_engine, expire_on_commit=False)
 
 
 def make_service(
-    factory: Any, provider: Any, tmp_path: Path, min_count: int = 5
+    factory: Any,
+    provider: Any,
+    tmp_path: Path,
+    min_count: int = 5,
+    pipeline_run_id: uuid.UUID | None = None,
 ) -> AnomalyService:
     return AnomalyService(
-        factory, provider, report_path=tmp_path / "anomaly-report.md", min_count=min_count
+        factory,
+        provider,
+        report_path=tmp_path / "anomaly-report.md",
+        min_count=min_count,
+        pipeline_run_id=pipeline_run_id,
     )
 
 
-def test_detects_and_persists_anomalies(
-    factory: Any, db_session: Session, tmp_path: Path
-) -> None:
+def test_detects_and_persists_anomalies(factory: Any, db_session: Session, tmp_path: Path) -> None:
     seed_spike_scenario(db_session)
     provider = FakeSlackProvider()
     result = make_service(factory, provider, tmp_path).run()
@@ -150,9 +189,7 @@ def test_rerun_regenerates_without_duplicates(
     assert AnomalyRepository(db_session).count() == 2
 
 
-def test_slack_fallback_when_llm_fails(
-    factory: Any, db_session: Session, tmp_path: Path
-) -> None:
+def test_slack_fallback_when_llm_fails(factory: Any, db_session: Session, tmp_path: Path) -> None:
     seed_spike_scenario(db_session)
     result = make_service(factory, FakeSlackProvider(fail=True), tmp_path).run()
     rows = AnomalyRepository(db_session).all()
@@ -199,9 +236,46 @@ def test_progress_covers_alert_generation(
     assert final.completed_work == 3
 
 
-def test_baseline_only_is_a_clean_stop(
+def test_detection_records_stage_observations(
     factory: Any, db_session: Session, tmp_path: Path
 ) -> None:
+    seed_spike_scenario(db_session)
+    run_id = seed_anomaly_pipeline_run(db_session)
+
+    result = make_service(
+        factory, FakeSlackProvider(fail=True), tmp_path, pipeline_run_id=run_id
+    ).run()
+
+    repo = AnomalyStageObservationRepository(db_session)
+    observations = repo.slowest(sort="started_at", pipeline_run_id=run_id)
+    assert repo.count() == 6
+    assert result.observed_steps == 6
+    assert "Timing:" in result.summary()
+    assert {o.pipeline_run_id for o in observations} == {run_id}
+    assert [o.step for o in observations] == [
+        "report_write",
+        "alert",
+        "alert",
+        "persist_anomalies",
+        "detect_day",
+        "load_snapshot",
+    ]
+
+    detect_day = next(o for o in observations if o.step == "detect_day")
+    assert detect_day.day == 2
+    assert detect_day.baseline_issue_count == 1
+    assert detect_day.current_issue_count == 2
+    assert detect_day.anomalies_detected == 2
+    assert detect_day.details["baseline_date"] == "2026-02-25T12:00:00+00:00"
+
+    alerts = [o for o in observations if o.step == "alert"]
+    assert {o.issue for o in alerts} == {"leak", "ghost noises"}
+    assert sum(o.alert_count for o in alerts) == 2
+    assert sum(o.fallback_count for o in alerts) == 2
+    assert sum(o.delivered_count for o in alerts) == 0
+
+
+def test_baseline_only_is_a_clean_stop(factory: Any, db_session: Session, tmp_path: Path) -> None:
     seed_catalog(db_session, "leak")
     seed_issue(db_session, "d1_0", 1, "leak")
     result = make_service(factory, FakeSlackProvider(), tmp_path).run()
@@ -310,50 +384,93 @@ def test_api_anomalies_endpoint_and_report(
     assert "leak" in report.text
 
 
-def test_api_anomaly_trends(
-    factory: Any, db_session: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_api_anomaly_observations(factory: Any, db_session: Session, tmp_path: Path) -> None:
     from fastapi.testclient import TestClient
 
     from cxintel.api.app import app
-
-    client = TestClient(app)
-    # No anomalies yet → empty trends (nothing to chart).
-    assert client.get("/api/anomalies/trends").json() == {"days": [], "series": []}
 
     seed_spike_scenario(db_session)
-    make_service(factory, FakeSlackProvider(), tmp_path).run()
+    run_id = seed_anomaly_pipeline_run(db_session)
+    make_service(factory, FakeSlackProvider(), tmp_path, pipeline_run_id=run_id).run()
 
-    trends = client.get("/api/anomalies/trends").json()
-    assert trends["days"] == [1, 2]
-    by_issue = {s["issue"]: s["counts"] for s in trends["series"]}
-    # Counts per day for every anomaly issue, aligned with `days`.
-    assert by_issue["leak"] == [4, 8]
-    assert by_issue["ghost noises"] == [0, 1]
+    observations = (
+        TestClient(app)
+        .get(
+            "/api/pipeline/anomaly-observations",
+            params={"sort": "started_at", "pipeline_run_id": str(run_id)},
+        )
+        .json()
+    )
+
+    assert len(observations) == 6
+    assert observations[0]["step"] == "report_write"
+    detect_day = next(o for o in observations if o["step"] == "detect_day")
+    assert detect_day["pipeline_run_id"] == str(run_id)
+    assert detect_day["day"] == 2
+    assert detect_day["baseline_issue_count"] == 1
+    assert detect_day["current_issue_count"] == 2
+    assert detect_day["anomalies_detected"] == 2
 
 
-def test_api_anomaly_trends_caps_series_at_top_five(
-    factory: Any, db_session: Session, tmp_path: Path
+def seed_timeline_scenario(session: Session) -> None:
+    """Day 2 'leak' issues at 09:05, 09:40, and 11:15 (10:00 hour empty)."""
+    d2 = datetime(2026, 2, 26, tzinfo=UTC)
+    seed_issue(session, "tl_a", 2, "leak", started_at=d2.replace(hour=9, minute=5))
+    seed_issue(session, "tl_b", 2, "leak", started_at=d2.replace(hour=9, minute=40))
+    seed_issue(session, "tl_c", 2, "leak", started_at=d2.replace(hour=11, minute=15))
+    # A different issue in the same hours must not bleed into the timeline.
+    seed_issue(session, "tl_other", 2, "ghost noises", started_at=d2.replace(hour=9, minute=10))
+
+
+def test_issue_timeline_buckets_hourly(db_session: Session) -> None:
+    seed_timeline_scenario(db_session)
+    timeline = ConversationIssueRepository(db_session).issue_timeline("leak")
+    assert timeline == [
+        (datetime(2026, 2, 26, 9, tzinfo=UTC), 2),
+        (datetime(2026, 2, 26, 11, tzinfo=UTC), 1),
+    ]
+    assert ConversationIssueRepository(db_session).issue_timeline("no such issue") == []
+
+
+def test_issue_timeline_bucket_size_is_configurable(db_session: Session) -> None:
+    seed_timeline_scenario(db_session)
+    timeline = ConversationIssueRepository(db_session).issue_timeline("leak", bucket_seconds=7200)
+    assert timeline == [
+        (datetime(2026, 2, 26, 8, tzinfo=UTC), 2),
+        (datetime(2026, 2, 26, 10, tzinfo=UTC), 1),
+    ]
+
+
+def test_api_anomaly_timeline(settings_on_test_db: str, db_session: Session) -> None:
+    from fastapi.testclient import TestClient
+
+    from cxintel.api.app import app
+
+    seed_timeline_scenario(db_session)
+    payload = TestClient(app).get("/api/anomalies/timeline", params={"issue": "leak"}).json()
+    assert payload["issue"] == "leak"
+    assert payload["bucket_seconds"] == 3600
+    # Zero-filled between the first and last non-empty bucket: the quiet
+    # 10:00 hour appears explicitly so gaps render honestly.
+    assert [(p["t"], p["count"]) for p in payload["points"]] == [
+        ("2026-02-26T09:00:00Z", 2),
+        ("2026-02-26T10:00:00Z", 0),
+        ("2026-02-26T11:00:00Z", 1),
+    ]
+    # Day markers anchor to the real first conversation start of each day.
+    assert payload["day_starts"] == {"2": "2026-02-26T09:05:00Z"}
+
+
+def test_api_anomaly_timeline_unknown_issue_is_empty(
+    settings_on_test_db: str, db_session: Session
 ) -> None:
     from fastapi.testclient import TestClient
 
     from cxintel.api.app import app
 
-    # Eight distinct novel issues on day 2 → far more anomalies than the cap.
-    seed_catalog(db_session, "leak")
-    for i in range(4):
-        seed_issue(db_session, f"t1_{i}", 1, "leak")
-    for n in range(8):
-        for i in range(n + 1):  # different volumes so ranking is deterministic
-            seed_issue(
-                db_session, f"t2_{n}_{i}", 2, f"novel issue {n}", matched=False, severity="high"
-            )
-    make_service(factory, FakeSlackProvider(), tmp_path).run()
-
-    trends = TestClient(app).get("/api/anomalies/trends").json()
-    assert len(trends["series"]) == 5
-    for series in trends["series"]:
-        assert len(series["counts"]) == len(trends["days"])
+    payload = TestClient(app).get("/api/anomalies/timeline", params={"issue": "nope"}).json()
+    assert payload["points"] == []
+    assert payload["day_starts"] == {}
 
 
 def test_cli_analyze_and_report(

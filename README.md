@@ -41,6 +41,48 @@ make stop          # stop the containers (Ctrl-C stops the API first)
 Adminer database UI, then serves the API in the foreground and prints the URLs.
 Everything is discoverable from the landing page — no further docs required.
 
+### Demo workflows
+
+The canonical workflow generates every artifact locally:
+
+```bash
+make start
+# In the Control Center:
+# 1. Run Data Ingestion
+# 2. Run Conversation Understanding
+# 3. Run Remaining Pipeline
+```
+
+For demonstrations and evaluation, reviewers can instead restore a supplied
+snapshot of the expensive AI-generated artifacts:
+
+```bash
+make start
+# In the Control Center:
+# 1. Run Data Ingestion
+# 2. Click "Import Pre-generated AI Dataset"
+```
+
+The imported dataset is a cache of artifacts produced by Conversation
+Understanding and later derived stages. It is not a new source of truth and it
+does not overwrite raw imported conversations or messages. It lets reviewers
+inspect anomaly detection, the knowledge base, persisted semantic-retrieval
+documents, and other completed downstream outputs without waiting for the full
+offline AI pipeline or spending Conversation Understanding API credits.
+
+By default the Control Center imports
+`data/processed/data-artifacts.tgz`; override this with
+`DERIVED_DATA_PATH`. The same restore is available from the CLI:
+
+```bash
+app import-derived data/processed/data-artifacts.tgz
+```
+
+Semantic search and the Resolution Assistant may still need one embedding
+request per user query. If `GOOGLE_API_KEY` is unavailable, those query-time AI
+features remain disabled gracefully while imported anomaly and knowledge-base
+artifacts stay inspectable.
+
 If Google AI Studio has not yet been configured, the landing page detects the missing `GOOGLE_API_KEY` and shows an **Enable AI Capabilities** card: create a free key at [Google AI Studio](https://aistudio.google.com/apikey), paste it into the card, and click **Save Configuration** — the key is written to your local `.env` and AI capabilities enable immediately, no restart or manual file editing required. The database, Adminer, API, and documentation remain fully usable without the key; only AI-powered capabilities are disabled until it is configured.
 
 Optional: copy `.env.example` to `.env` to override any setting.
@@ -70,8 +112,10 @@ not just observed:
   unmet are disabled and explain why; stages from future phases are disabled
   with their planned phase. Conversation Understanding exposes two explicit
   actions — **Run Sample (100)** for development and prompt iteration, and
-  **Run Full Dataset** (~10k LLM calls, resumable) — so a full run is always
-  a deliberate choice. Conversation Understanding defaults to
+  **Run Full Dataset** (~10k LLM calls, resumable) — plus **Import
+  Pre-generated AI Dataset** for restoring a cached snapshot of derived
+  artifacts — so a full run is always a deliberate choice. Conversation
+  Understanding defaults to
   `UNDERSTAND_CONCURRENCY=32`; on a free-tier Gemini key, set
   `UNDERSTAND_CONCURRENCY=1` and expect rate-limited pacing (the provider
   honours the server's suggested retry delay); a full run realistically needs
@@ -90,9 +134,11 @@ not just observed:
   immediately.
 - **Anomaly Analysis panel** — an operational dashboard embedded (always
   visible) in the Anomaly Detection stage card, which spans the full width:
-  an issue-frequency trend chart across days, one card per
-  detected anomaly (severity, triggering signals, baseline → current metrics,
-  recommended action), and the raw markdown report as a collapsible section.
+  an hourly issue-frequency timeline for the selected anomaly (real
+  conversation timestamps, so the operator sees when a spike began and how
+  it evolved), one card per detected anomaly (severity, triggering signals,
+  baseline → current metrics, recommended action), and the raw markdown
+  report as a collapsible section.
   The report remains served at `GET /api/anomalies/report`.
 - **Resolution Assistant panel** — grounded decision support for agents:
   describe a new ticket (structured via Prompt #1, never persisted) or point
@@ -118,10 +164,11 @@ Endpoints:
 | `/api/status` | Services, AI, stage cards, job state, metrics (backs the landing page) |
 | `POST /api/pipeline/run` | Run every incomplete pipeline stage in dependency order |
 | `POST /api/pipeline/{stage}/run` | Run a single pipeline stage in the background |
+| `POST /api/pipeline/import-derived` | Import the configured pre-generated AI artifact snapshot |
 | `GET /api/pipeline/runs` | Pipeline audit trail — recent stage runs, newest first |
 | `GET /api/anomalies` | Detected anomalies (canonical artifact: signals, metrics, actions) |
 | `GET /api/anomalies/report` | The anomaly report, rendered from persisted anomalies (markdown) |
-| `GET /api/anomalies/trends` | Per-day frequency of the top anomaly issues (backs the trend chart) |
+| `GET /api/anomalies/timeline` | Hourly issue-frequency timeline for one anomaly issue (`issue`; backs the chart) |
 | `GET /api/knowledge/search` | Metadata-first semantic search over the knowledge base (`q`, `product`, `limit`) |
 | `POST /api/resolution` | Grounded resolution recommendation for one issue (`conversation_id` or free-text `text`) |
 | `GET /api/resolution/issues` | The selectable issues of one analyzed conversation (backs the issue picker) |
@@ -133,6 +180,8 @@ Endpoints:
 
 `make start`/`stop` are built on smaller targets you can also run directly:
 `make up`/`down` (containers only), `make serve` (API only), `make db-health`.
+Run `make data-artifacts` to refresh the local derived-data bundle at
+`data/processed/data-artifacts.tgz`.
 
 ## Project layout
 
@@ -175,9 +224,11 @@ data/raw/            # place sample_tickets_v6.json here (git-ignored)
 | `check` | `lint` + `typecheck` + `test` (CI gate) |
 | `serve` | Run the FastAPI service |
 | `clean` | Remove caches and build artifacts |
+| `data-artifacts` | Refresh `data/processed/data-artifacts.tgz` with derived AI artifacts only |
 | `ingest` / `stats` / `pipeline` | Import the dataset / show ingestion stats / run remaining stages |
 | `understand` | Run conversation understanding on a sample of 100 (see `app understand --full`) |
 | `bottlenecks` | Show slow per-conversation LLM observations from understanding runs |
+| `anomaly-observations` | Show slow anomaly-detection stage observations |
 | `analyze` | Run deterministic anomaly detection vs the Day-1 baseline |
 | `build-kb` | Build the retrieval knowledge base (deterministic docs + embeddings) |
 | `chat` | Resolution Assistant — grounded recommendations from historical evidence |
@@ -192,6 +243,8 @@ app serve
 app ingest         # import the dataset (idempotent; applies migrations first)
 app understand     # conversation understanding — sample of 100 (resumable)
 app understand --full  # process every remaining conversation (~10k LLM calls)
+app import-derived data/processed/data-artifacts.tgz  # restore cached AI artifacts
+app export-derived data/processed/derived-ai-dataset.zip  # write derived snapshot zip
 app stats          # ingestion statistics — verifies the import
 app analyze        # deterministic anomaly detection vs the Day-1 baseline
 app report         # print the anomaly report (from persisted anomalies)
@@ -203,9 +256,60 @@ app chat           # interactive mode: describe tickets, get grounded recommenda
 app pipeline       # run every incomplete pipeline stage in dependency order
 app runs           # pipeline audit trail — recent stage runs, newest first
 app bottlenecks --sort llm_seconds  # slowest LLM observations by phase timing
+app anomaly-observations --sort started_at  # anomaly detection stage timings
 ```
 
 ## Configuration
 
 All settings come from environment variables (or `.env`); see `.env.example`.
-Key ones: `GOOGLE_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`, `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, `DATABASE_URL`, `SLACK_WEBHOOK_URL`, `LOG_LEVEL`.
+Key ones: `GOOGLE_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`, `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, `DATABASE_URL`, `RAW_DATA_PATH`, `DERIVED_DATA_PATH`, `SLACK_WEBHOOK_URL`, `LOG_LEVEL`.
+
+## Pre-generated AI dataset format
+
+`DERIVED_DATA_PATH` points to `data/processed/data-artifacts.tgz` by default.
+That bundle includes a `derived-ai-dataset.zip` file with this layout:
+
+```text
+manifest.json
+tables/conversation_analyses.csv
+tables/conversation_issues.csv
+tables/issue_catalog.csv
+tables/anomalies.csv
+tables/knowledge_documents.csv
+```
+
+`manifest.json` must use format `cxintel-derived-v1` and include each table's
+path and row count:
+
+```json
+{
+  "format": "cxintel-derived-v1",
+  "tables": {
+    "conversation_analyses": { "path": "tables/conversation_analyses.csv", "rows": 10000 },
+    "conversation_issues": { "path": "tables/conversation_issues.csv", "rows": 12400 },
+    "issue_catalog": { "path": "tables/issue_catalog.csv", "rows": 80 },
+    "anomalies": { "path": "tables/anomalies.csv", "rows": 12 },
+    "knowledge_documents": { "path": "tables/knowledge_documents.csv", "rows": 6700 }
+  }
+}
+```
+
+The importer validates headers, manifest counts, and conversation references,
+then replaces only the derived artifact tables in one PostgreSQL transaction.
+If validation or import fails, the existing derived data is rolled back intact.
+
+To refresh the reviewer artifact bundle from the current derived AI tables:
+
+```bash
+make data-artifacts
+```
+
+This writes `data/processed/data-artifacts.tgz`, which contains only
+`derived-ai-dataset.zip` plus checksum/restore notes. It does not include the
+raw ticket dataset or a full PostgreSQL dump.
+
+Import it with:
+
+```bash
+app import-derived data/processed/data-artifacts.tgz
+```

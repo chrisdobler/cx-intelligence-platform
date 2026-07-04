@@ -40,6 +40,9 @@ def test_landing_page_served_at_root() -> None:
     assert "Danger Zone" in response.text
     assert "Reset Derived Data" in response.text
     assert "Anomaly Analysis" in response.text
+    assert 'id="model-select"' in response.text
+    assert "/api/config/llm-model" in response.text
+    assert 'opt.value !== "retry_failures"' in response.text
 
 
 def test_status_endpoint_shape() -> None:

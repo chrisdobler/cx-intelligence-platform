@@ -27,8 +27,10 @@ from ..knowledge_base.retrieval import RetrievedKnowledge
 from ..pipeline import orchestrator
 from ..pipeline.jobs import TRACKER, Job, JobBusyError, JobState
 from ..pipeline.orchestrator import (
+    AnomalyObservationRecord,
     LLMObservationRecord,
     RunRecord,
+    anomaly_observations,
     llm_observations,
     recent_runs,
     run_remaining,
@@ -106,6 +108,7 @@ def api_config() -> dict[str, object]:
         "embedding_dim": s.embedding_dim,
         "slack_webhook_set": s.slack_webhook_url is not None,
         "raw_data_path": s.raw_data_path,
+        "derived_data_path": s.derived_data_path,
         "batch_size": s.batch_size,
         "log_level": s.log_level,
         "api_host": s.api_host,
@@ -166,67 +169,65 @@ def api_anomalies() -> list[AnomalyRecord]:
     return _anomaly_rows()
 
 
-class TrendSeries(BaseModel):
-    """Per-day conversation-issue counts for one anomaly issue."""
+class TimelinePoint(BaseModel):
+    """One time bucket on the anomaly timeline."""
+
+    t: datetime
+    count: int
+
+
+class AnomalyTimeline(BaseModel):
+    """Hourly issue-frequency timeline behind the control-center chart."""
 
     issue: str
-    counts: list[int]  # aligned with AnomalyTrends.days
+    bucket_seconds: int
+    points: list[TimelinePoint]  # zero-filled between first and last bucket
+    day_starts: dict[str, datetime]  # reporting day → first conversation start
 
 
-class AnomalyTrends(BaseModel):
-    """Issue-frequency-over-time data behind the control-center trend chart."""
-
-    days: list[int]
-    series: list[TrendSeries]
+# V1 renders hourly buckets; the size is a code-level knob, not a UI control.
+_TIMELINE_BUCKET_SECONDS = 3600
 
 
-_SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-_TRENDS_MAX_SERIES = 5
+@app.get("/api/anomalies/timeline")
+def api_anomaly_timeline(issue: str) -> AnomalyTimeline:
+    """Occurrences of one anomaly issue over time, in hourly buckets.
 
-
-@app.get("/api/anomalies/trends")
-def api_anomaly_trends() -> AnomalyTrends:
-    """Per-day frequency of the top anomaly issues (presentation data only).
-
-    Series are limited to the five most significant anomaly issues (by
-    severity, then absolute change). Empty when no anomalies are recorded or
-    the database is unavailable — detection itself is untouched.
+    Presentation data only — anomaly detection still operates on its existing
+    aggregation periods; this exposes the real ``Conversation.started_at``
+    timestamps behind an anomaly. Buckets between the first and last
+    occurrence are zero-filled so quiet hours render honestly. Empty when the
+    issue is unknown or the database is unavailable.
     """
-    from ..db import get_session_factory
-    from ..repositories import (
-        AnomalyRepository,
-        ConversationIssueRepository,
-        ConversationRepository,
-    )
+    from datetime import timedelta
 
+    from ..db import get_session_factory
+    from ..repositories import ConversationIssueRepository, ConversationRepository
+
+    empty = AnomalyTimeline(
+        issue=issue, bucket_seconds=_TIMELINE_BUCKET_SECONDS, points=[], day_starts={}
+    )
     try:
         with get_session_factory()() as session:
-            anomalies = AnomalyRepository(session).all()
-            if not anomalies:
-                return AnomalyTrends(days=[], series=[])
-            ranked = sorted(
-                anomalies, key=lambda a: (_SEVERITY_RANK.get(a.severity, 9), -abs(a.delta))
+            buckets = ConversationIssueRepository(session).issue_timeline(
+                issue, bucket_seconds=_TIMELINE_BUCKET_SECONDS
             )
-            top_issues: list[str] = []
-            for anomaly in ranked:
-                if anomaly.issue not in top_issues:
-                    top_issues.append(anomaly.issue)
-                if len(top_issues) == _TRENDS_MAX_SERIES:
-                    break
-            days = ConversationRepository(session).days()
-            issues = ConversationIssueRepository(session)
-            counts_by_day = {
-                day: {s.canonical_name: s.count for s in issues.day_issue_stats(day)}
-                for day in days
-            }
+            if not buckets:
+                return empty
+            day_starts = ConversationRepository(session).day_starts()
     except Exception:
-        return AnomalyTrends(days=[], series=[])
-    return AnomalyTrends(
-        days=days,
-        series=[
-            TrendSeries(issue=issue, counts=[counts_by_day[d].get(issue, 0) for d in days])
-            for issue in top_issues
-        ],
+        return empty
+    counts = dict(buckets)
+    step = timedelta(seconds=_TIMELINE_BUCKET_SECONDS)
+    points, cursor = [], buckets[0][0]
+    while cursor <= buckets[-1][0]:
+        points.append(TimelinePoint(t=cursor, count=counts.get(cursor, 0)))
+        cursor += step
+    return AnomalyTimeline(
+        issue=issue,
+        bucket_seconds=_TIMELINE_BUCKET_SECONDS,
+        points=points,
+        day_starts={str(day): start for day, start in day_starts.items()},
     )
 
 
@@ -363,6 +364,19 @@ def pipeline_llm_observations(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.get("/api/pipeline/anomaly-observations")
+def pipeline_anomaly_observations(
+    limit: int = Query(default=20, ge=1, le=200),
+    sort: str = Query(default="total_seconds"),
+    pipeline_run_id: Annotated[uuid.UUID | None, Query()] = None,
+) -> list[AnomalyObservationRecord]:
+    """Slowest anomaly-detection stage timing observations."""
+    try:
+        return anomaly_observations(limit=limit, sort=sort, pipeline_run_id=pipeline_run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post("/api/pipeline/{key}/run", status_code=202)
 def run_pipeline_stage(key: str, option: str | None = Query(default=None)) -> Job:
     """Run one pipeline stage in the background (202 with the job snapshot).
@@ -408,6 +422,21 @@ def run_remaining_pipeline() -> Job:
     """Run every incomplete pipeline stage in dependency order, in the background."""
     try:
         return TRACKER.start("pipeline", run_remaining)
+    except JobBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/pipeline/import-derived", status_code=202)
+def import_derived_pipeline_data() -> Job:
+    """Restore the configured pre-generated AI dataset in the background."""
+    from ..pipeline.import_derived import import_derived_data
+
+    path = Path(get_settings().derived_data_path)
+    try:
+        return TRACKER.start(
+            "import_derived",
+            lambda progress: import_derived_data(path, progress=progress, trigger="api"),
+        )
     except JobBusyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
