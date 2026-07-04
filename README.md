@@ -69,7 +69,8 @@ not just observed:
   with their planned phase. Conversation Understanding exposes two explicit
   actions — **Run Sample (100)** for development and prompt iteration, and
   **Run Full Dataset** (~10k LLM calls, resumable) — so a full run is always
-  a deliberate choice. On a free-tier Gemini key, set
+  a deliberate choice. Conversation Understanding defaults to
+  `UNDERSTAND_CONCURRENCY=32`; on a free-tier Gemini key, set
   `UNDERSTAND_CONCURRENCY=1` and expect rate-limited pacing (the provider
   honours the server's suggested retry delay); a full run realistically needs
   a paid tier.

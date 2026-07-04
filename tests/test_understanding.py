@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from threading import Lock
 from typing import Any, TypeVar, cast
 
 import pytest
@@ -55,11 +56,13 @@ class FakeProvider:
     def __init__(self, by_marker: dict[str, StructuredConversation | Exception]) -> None:
         self.by_marker = by_marker
         self.prompts: list[str] = []
+        self._lock = Lock()
 
     def extract(
         self, prompt: str, schema: type[T], on_retry: RetryCallback | None = None
     ) -> T:
-        self.prompts.append(prompt)
+        with self._lock:
+            self.prompts.append(prompt)
         for marker, result in self.by_marker.items():
             if marker in prompt:
                 if isinstance(result, Exception):
@@ -126,9 +129,14 @@ def factory(settings_on_test_db: str, migrated_engine: Any, db_session: Session)
 
 
 def make_service(
-    factory: Any, provider: FakeProvider, pipeline_run_id: uuid.UUID | None = None
+    factory: Any,
+    provider: FakeProvider,
+    pipeline_run_id: uuid.UUID | None = None,
+    concurrency: int = 1,
 ) -> UnderstandingService:
-    return UnderstandingService(factory, provider, concurrency=1, pipeline_run_id=pipeline_run_id)
+    return UnderstandingService(
+        factory, provider, concurrency=concurrency, pipeline_run_id=pipeline_run_id
+    )
 
 
 def seed_pipeline_run(session: Session) -> uuid.UUID:
@@ -266,7 +274,7 @@ def test_catalog_built_from_day1_only_and_fed_to_day2(
     seed_conversation(db_session, "conv_d2", 2, "marker-day2")
     provider = FakeProvider(
         {
-            "marker-day1": analysis_for(["base water leak"]),
+            "marker-day1": analysis_for(["zeta baseline flux regulator"]),
             "marker-day2": analysis_for(["totally novel problem"], matched=False),
         }
     )
@@ -275,18 +283,66 @@ def test_catalog_built_from_day1_only_and_fed_to_day2(
 
     catalog = IssueCatalogRepository(db_session).all()
     # Catalog derives from Day 1 only — the novel Day-2 issue is NOT added.
-    assert [e.canonical_name for e in catalog] == ["base water leak"]
+    assert [e.canonical_name for e in catalog] == ["zeta baseline flux regulator"]
     entry = catalog[0]
     assert entry.first_seen_day == 1
     assert entry.example_count == 1
-    assert entry.representative_examples == ["customer says base water leak"]
+    assert entry.representative_examples == ["customer says zeta baseline flux regulator"]
 
     # The Day-2 prompt received the Day-1 catalog for normalization.
     day2_prompt = next(p for p in provider.prompts if "marker-day2" in p)
-    assert "base water leak" in day2_prompt
+    assert "zeta baseline flux regulator" in day2_prompt
 
     # The novel Day-2 issue surfaces as a candidate novel issue.
     assert ConversationIssueRepository(db_session).unmatched_count() == 1
+
+
+def test_baseline_incomplete_defers_later_days(factory: Any, db_session: Session) -> None:
+    seed_conversation(db_session, "conv_d1", 1, "marker-day1")
+    seed_conversation(db_session, "conv_d2", 2, "marker-day2")
+    provider = FakeProvider(
+        {
+            "marker-day1": PermanentLLMExtractionError("baseline failed"),
+            "marker-day2": analysis_for(["day2 should wait"]),
+        }
+    )
+
+    result = make_service(factory, provider).run(limit=None)
+
+    assert result.failed == 1
+    assert result.analyzed == 0
+    assert ConversationAnalysisRepository(db_session).count() == 0
+    assert IssueCatalogRepository(db_session).count() == 0
+    assert len(provider.prompts) == 1
+    assert "marker-day2" not in provider.prompts[0]
+
+
+def test_high_concurrency_keeps_one_request_and_projection_per_conversation(
+    factory: Any, db_session: Session
+) -> None:
+    total = 40
+    by_marker: dict[str, StructuredConversation | Exception] = {}
+    for i in range(total):
+        marker = f"marker-{i:02d}-end"
+        seed_conversation(db_session, f"conv_{i:02d}", 1, marker)
+        by_marker[marker] = analysis_for([f"issue {i:02d}"])
+    provider = FakeProvider(by_marker)
+    run_id = seed_pipeline_run(db_session)
+
+    result = make_service(
+        factory, provider, pipeline_run_id=run_id, concurrency=32
+    ).run(limit=None)
+
+    assert result.analyzed == total
+    assert result.failed == 0
+    assert len(provider.prompts) == total
+    for marker in by_marker:
+        assert sum(marker in prompt for prompt in provider.prompts) == 1
+    assert ConversationAnalysisRepository(db_session).count() == total
+    assert LLMCallObservationRepository(db_session).count() == total
+    issues = db_session.query(ConversationIssue).all()
+    assert len(issues) == total
+    assert len({issue.conversation_id for issue in issues}) == total
 
 
 def test_rerun_skips_already_analyzed(factory: Any, db_session: Session) -> None:

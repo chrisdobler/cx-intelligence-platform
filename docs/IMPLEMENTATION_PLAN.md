@@ -56,8 +56,8 @@ All conversations are available in PostgreSQL.
 > Prompt #1, `ConversationIssue` projection, and Day-1 issue catalog are
 > implemented, integrated with the CLI (`app understand [--full]`), the REST
 > API, and the control center. One deliberate refinement: conversations are
-> still processed whole and exactly once, but within a day a small worker
-> pool (default 8) runs extractions concurrently — day boundaries remain
+> still processed whole and exactly once, but within a day a bounded worker
+> pool (default 32) runs extractions concurrently — day boundaries remain
 > strict barriers, so outputs are identical to sequential processing. The
 > stage exposes explicit **Run Sample (100)** and **Run Full Dataset**
 > actions; runs are resumable (already-analyzed conversations are skipped).

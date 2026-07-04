@@ -5,9 +5,9 @@ extracts a canonical StructuredConversation, which is persisted unchanged to
 ``ConversationAnalysis.analysis_json`` and projected 1:1 into
 ``conversation_issues``. Days are processed in order with a strict barrier
 between them: the Issue Catalog is derived from Day 1 only (ADR-011), and
-Days 2+ normalize against that frozen baseline. Within a day, a small worker
-pool bounds wall-clock time — outputs are identical to sequential processing,
-only the order of API calls differs.
+Days 2+ normalize against that frozen baseline. Within a day, a bounded worker
+pool defaults to 32 concurrent one-conversation requests — outputs are
+identical to sequential processing, only the order of API calls differs.
 
 Runs are resumable and idempotent: conversations that already have an
 analysis are skipped, and conversations with terminal recorded failures are
@@ -183,6 +183,7 @@ class UnderstandingService:
         )
 
         remaining = limit
+        baseline_day = days[0] if days else None
         for day in days:
             if remaining is not None and remaining <= 0:
                 break
@@ -191,8 +192,9 @@ class UnderstandingService:
             )
             if remaining is not None:
                 remaining -= processed
+            if day == baseline_day and not self._maybe_build_catalog(days, result, reporter):
+                break
 
-        self._maybe_build_catalog(days, result, reporter)
         return result
 
     def _pending_work_count(
@@ -328,15 +330,10 @@ class UnderstandingService:
                 )
                 for name, description in catalog_context
             ]
-            seen_names = (
-                ConversationIssueRepository(session).canonical_names_for_day(day)
-                if not catalog
-                else None
-            )
             load_seconds = time.perf_counter() - phase_started
 
             phase_started = time.perf_counter()
-            prompt = build_prompt(conversation, messages, catalog, seen_names)
+            prompt = build_prompt(conversation, messages, catalog, seen_names=None)
             prompt_seconds = time.perf_counter() - phase_started
             prompt_characters = len(prompt)
 
@@ -500,17 +497,17 @@ class UnderstandingService:
 
     def _maybe_build_catalog(
         self, days: list[int], result: UnderstandingResult, reporter: ProgressReporter
-    ) -> None:
+    ) -> bool:
         """(Re)build the Day-1 baseline catalog once Day 1 is fully analyzed."""
         if not days:
-            return
+            return True
         baseline_day = days[0]
         with self._session_factory() as session:
             conversations = ConversationRepository(session)
             if conversations.pending_analysis_ids_for_day(
                 baseline_day, limit=1, include_terminal_failures=True
             ):
-                return  # baseline incomplete — catalog not built yet
+                return False  # baseline incomplete — catalog not built yet
             issues = ConversationIssueRepository(session)
             now = datetime.now(tz=UTC)
             entries = [
@@ -532,3 +529,4 @@ class UnderstandingService:
         reporter.report(
             message=f"Issue catalog rebuilt from Day {baseline_day}: {len(entries)} entries."
         )
+        return True

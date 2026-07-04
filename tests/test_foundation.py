@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from typer.testing import CliRunner
 
 from cxintel import __version__
@@ -20,7 +21,17 @@ def test_version_command() -> None:
 def test_settings_defaults() -> None:
     assert Settings.model_fields["llm_provider"].default == "google"
     assert Settings.model_fields["llm_model"].default == "gemini-2.5-flash"
+    assert Settings.model_fields["understand_concurrency"].default == 32
     assert str(Settings.model_fields["database_url"].default).startswith("postgresql")
+
+
+def test_understand_concurrency_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNDERSTAND_CONCURRENCY", "7")
+    get_settings.cache_clear()
+    try:
+        assert get_settings().understand_concurrency == 7
+    finally:
+        get_settings.cache_clear()
 
 
 def test_get_settings_is_cached() -> None:

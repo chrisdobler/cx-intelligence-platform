@@ -70,7 +70,7 @@ class Settings(BaseSettings):
         default=100, description="Conversations processed by the 'Run Sample' action."
     )
     understand_concurrency: int = Field(
-        default=8, description="Worker threads for conversation understanding (per day)."
+        default=32, description="Worker threads for conversation understanding (per day)."
     )
     batch_size: int = Field(default=100)
 

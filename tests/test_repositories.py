@@ -8,7 +8,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from cxintel.models import ConversationIssue, IssueCatalogEntry, LLMCallObservation, PipelineRun
+from cxintel.models import (
+    Conversation,
+    ConversationIssue,
+    IssueCatalogEntry,
+    LLMCallObservation,
+    PipelineRun,
+)
 from cxintel.repositories import (
     AnomalyRepository,
     ConversationIssueRepository,
@@ -380,6 +386,31 @@ def test_issue_day_aggregation(db_session: Session) -> None:
     assert {(a.canonical_name, a.example_count) for a in agg} == {("leak", 2), ("noise", 1)}
     leak = next(a for a in agg if a.canonical_name == "leak")
     assert "water pooling under the pod" in leak.examples
+
+
+def test_issue_day_aggregation_orders_examples_deterministically(
+    db_session: Session,
+) -> None:
+    late = seeded_conversation(db_session, "conv_late", day=1)
+    early = seeded_conversation(db_session, "conv_early", day=1)
+    late_conversation = db_session.get(Conversation, late)
+    early_conversation = db_session.get(Conversation, early)
+    assert late_conversation is not None
+    assert early_conversation is not None
+    late_conversation.started_at = datetime(2026, 2, 24, 12, 5, tzinfo=UTC)
+    early_conversation.started_at = datetime(2026, 2, 24, 12, 0, tzinfo=UTC)
+
+    late_issue = make_issue(late, "leak")
+    late_issue.customer_description = "late example"
+    early_issue = make_issue(early, "leak")
+    early_issue.customer_description = "early example"
+    repo = ConversationIssueRepository(db_session)
+    repo.replace_for_conversation(late, [late_issue])
+    repo.replace_for_conversation(early, [early_issue])
+    db_session.commit()
+
+    leak = repo.aggregate_for_day(1)[0]
+    assert leak.examples == ["early example", "late example"]
 
 
 def test_issue_unmatched_count(db_session: Session) -> None:

@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import case, func, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.postgresql import aggregate_order_by, insert
 from sqlalchemy.orm import Session
 
 from .models import (
@@ -389,7 +389,14 @@ class ConversationIssueRepository:
                 select(
                     ConversationIssue.canonical_name,
                     func.count(),
-                    func.array_agg(ConversationIssue.customer_description),
+                    func.array_agg(
+                        aggregate_order_by(
+                            ConversationIssue.customer_description,
+                            Conversation.started_at,
+                            Conversation.id,
+                            ConversationIssue.id,
+                        )
+                    ),
                 )
                 .join(Conversation, Conversation.id == ConversationIssue.conversation_id)
                 .where(Conversation.day == day)

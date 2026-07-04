@@ -165,9 +165,9 @@ application code, and is persisted unchanged to
 `ConversationAnalysis.analysis_json`. Issues are projected 1:1 into
 `conversation_issues`, and the issue catalog is derived from the Day-1
 baseline (Days 2–3 normalize against it; unmatched issues surface as
-candidate novel issues for anomaly detection). Within a day, a small worker
-pool bounds wall-clock time — day boundaries stay strict barriers, so outputs
-are identical to sequential processing.
+candidate novel issues for anomaly detection). Within a day, a bounded worker
+pool defaults to 32 concurrent one-conversation requests — day boundaries stay
+strict barriers, so outputs are identical to sequential processing.
 
 ## 3. Structured Conversation Store
 
