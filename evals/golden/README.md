@@ -33,7 +33,9 @@ file per case under `understanding/`, `retrieval/`, and `resolution/`;
   `StructuredConversation` (issue presence by canonical name + aliases,
   severity/impact sets, resolution booleans, keyword checks on symptoms).
 - **retrieval/**: a canonical `Issue` in → expected source conversation
-  external ids in the top-k, `min_recall`, optional `expect_filter_relaxed`.
+  external ids in the top-k, `min_recall`, optional `expect_filter_relaxed`,
+  and optional explicitly enumerated acceptable document refs for semantically
+  equivalent KnowledgeDocuments outside the source-id pool.
 - **resolution/**: a canonical `Issue` in → constraints on the validated
   `ResolutionResponse` (grounded flag, evidence strength set, citation count
   bounds and provenance, action keywords).

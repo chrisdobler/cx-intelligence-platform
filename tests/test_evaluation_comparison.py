@@ -11,7 +11,12 @@ from cxintel.evaluation.comparison import (
     compare_understanding,
     score_retrieval,
 )
-from cxintel.evaluation.golden import ExpectedIssue, ExpectedResolution, ExpectedUnderstanding
+from cxintel.evaluation.golden import (
+    ExpectedIssue,
+    ExpectedResolution,
+    ExpectedUnderstanding,
+    RetrievalDocumentRef,
+)
 from cxintel.knowledge_base.schema import KnowledgeDocument
 from cxintel.resolution_assistant.context import validate_citations
 from cxintel.resolution_assistant.schema import (
@@ -171,6 +176,48 @@ def test_retrieval_precision_check() -> None:
         filter_relaxed=False,
     )
     assert metrics["precision"] == 2 / 3
+    assert _failed(checks) == ["retrieval.precision"]
+
+
+def test_retrieval_precision_accepts_explicit_document_equivalents_only() -> None:
+    checks, metrics = score_retrieval(
+        ["a", "x", "y"],
+        ["a", "b"],
+        min_recall=0.0,
+        min_precision=2 / 3,
+        expect_filter_relaxed=None,
+        filter_relaxed=False,
+        retrieved_document_refs=[
+            RetrievalDocumentRef(conversation_external_id="a", issue="expected issue"),
+            RetrievalDocumentRef(conversation_external_id="x", issue="accepted equivalent"),
+            RetrievalDocumentRef(conversation_external_id="y", issue="wrong issue"),
+        ],
+        acceptable_retrieved_documents=[
+            RetrievalDocumentRef(conversation_external_id="x", issue="accepted equivalent")
+        ],
+    )
+    assert metrics["precision"] == 2 / 3
+    assert metrics["mrr"] == 1.0
+    assert all(c.passed for c in checks)
+
+
+def test_retrieval_precision_rejects_unlisted_document_issue() -> None:
+    checks, metrics = score_retrieval(
+        ["x"],
+        ["a"],
+        min_recall=0.0,
+        min_precision=1.0,
+        expect_filter_relaxed=None,
+        filter_relaxed=False,
+        retrieved_document_refs=[
+            RetrievalDocumentRef(conversation_external_id="x", issue="wrong issue"),
+        ],
+        acceptable_retrieved_documents=[
+            RetrievalDocumentRef(conversation_external_id="x", issue="accepted equivalent")
+        ],
+    )
+    assert metrics["precision"] == 0.0
+    assert metrics["hit"] == 0.0
     assert _failed(checks) == ["retrieval.precision"]
 
 

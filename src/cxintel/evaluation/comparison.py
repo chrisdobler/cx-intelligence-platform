@@ -20,6 +20,7 @@ from .golden import (
     ExpectedIssue,
     ExpectedResolution,
     ExpectedUnderstanding,
+    RetrievalDocumentRef,
     SuiteName,
 )
 
@@ -225,6 +226,8 @@ def score_retrieval(
     expect_filter_relaxed: bool | None,
     filter_relaxed: bool,
     kb_external_ids: set[str] | None = None,
+    retrieved_document_refs: list[RetrievalDocumentRef] | None = None,
+    acceptable_retrieved_documents: list[RetrievalDocumentRef] | None = None,
 ) -> tuple[list[CheckResult], dict[str, float]]:
     """Score one retrieval case; returns (checks, per-case metrics).
 
@@ -246,16 +249,33 @@ def score_retrieval(
             )
         )
 
+    acceptable_document_keys = {
+        (ref.conversation_external_id, ref.issue)
+        for ref in (acceptable_retrieved_documents or [])
+    }
+    retrieved_ref_keys = [
+        (ref.conversation_external_id, ref.issue) for ref in (retrieved_document_refs or [])
+    ]
+
+    def _is_relevant(index: int, ext_id: str) -> bool:
+        if ext_id in expected:
+            return True
+        if index < len(retrieved_ref_keys):
+            return retrieved_ref_keys[index] in acceptable_document_keys
+        return False
+
     hits = [ext_id for ext_id in expected if ext_id in retrieved_external_ids]
     recall = len(hits) / len(expected) if expected else 0.0
-    relevant_retrieved = [ext_id for ext_id in retrieved_external_ids if ext_id in expected]
+    relevant_retrieved = [
+        ext_id for index, ext_id in enumerate(retrieved_external_ids) if _is_relevant(index, ext_id)
+    ]
     precision = (
         len(relevant_retrieved) / len(retrieved_external_ids) if retrieved_external_ids else 0.0
     )
-    hit = 1.0 if hits else 0.0
+    hit = 1.0 if relevant_retrieved else 0.0
     reciprocal_rank = 0.0
     for rank, ext_id in enumerate(retrieved_external_ids, start=1):
-        if ext_id in expected:
+        if _is_relevant(rank - 1, ext_id):
             reciprocal_rank = 1.0 / rank
             break
 
@@ -269,11 +289,20 @@ def score_retrieval(
         )
     )
     if min_precision is not None:
+        acceptable_documents = [
+            (ref.conversation_external_id, ref.issue)
+            for ref in (acceptable_retrieved_documents or [])
+        ]
+        acceptable_note = (
+            f"; acceptable documents: {acceptable_documents}"
+            if acceptable_documents
+            else ""
+        )
         checks.append(
             _check(
                 "retrieval.precision",
                 "min",
-                f">= {min_precision}",
+                f">= {min_precision}{acceptable_note}",
                 f"{precision:.2f} (retrieved: {retrieved_external_ids})",
                 precision >= min_precision,
             )

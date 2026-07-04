@@ -32,6 +32,16 @@
     "conv_d985c3d1", "conv_db2e6d54", "conv_e12d8723", "conv_e30d434c", "conv_e4409b28",
     "conv_e96c18de", "conv_e9855963", "conv_ebba49fc", "conv_ec534e60", "conv_ff4fb4b5"
   ],
+  "acceptable_retrieved_documents": [
+    {
+      "conversation_external_id": "conv_6da261fc",
+      "issue": "incorrect billing charge"
+    },
+    {
+      "conversation_external_id": "conv_ac9b40cd",
+      "issue": "app billing management issue"
+    }
+  ],
   "min_recall": 0.0,
   "min_precision": 0.8
 }

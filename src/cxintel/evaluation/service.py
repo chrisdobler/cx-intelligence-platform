@@ -59,6 +59,7 @@ from .golden import (
     GoldenDataset,
     ResolutionCase,
     RetrievalCase,
+    RetrievalDocumentRef,
     SuiteName,
     UnderstandingCase,
     load_golden_dataset,
@@ -253,6 +254,15 @@ class EvaluationService:
         retrieved = [
             external_ids.get(hit.conversation_id, str(hit.conversation_id)) for hit in hits
         ]
+        retrieved_document_refs = [
+            RetrievalDocumentRef(
+                conversation_external_id=external_ids.get(
+                    hit.conversation_id, str(hit.conversation_id)
+                ),
+                issue=str(hit.document.get("issue", hit.issue)),
+            )
+            for hit in hits
+        ]
         filter_relaxed = product is not None and any(hit.product != product for hit in hits)
         checks, metrics = score_retrieval(
             retrieved,
@@ -262,6 +272,8 @@ class EvaluationService:
             expect_filter_relaxed=case.expect_filter_relaxed,
             filter_relaxed=filter_relaxed,
             kb_external_ids=kb_external_ids,
+            retrieved_document_refs=retrieved_document_refs,
+            acceptable_retrieved_documents=case.acceptable_retrieved_documents,
         )
         return CaseResult(
             case_id=case.case_id,

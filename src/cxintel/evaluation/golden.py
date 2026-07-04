@@ -103,6 +103,17 @@ class UnderstandingCase(_GoldenModel):
 # --- retrieval cases ---------------------------------------------------------
 
 
+class RetrievalDocumentRef(_GoldenModel):
+    """Stable document-level reference for retrieval expectations.
+
+    KnowledgeDocument row UUIDs are rebuild-local, so document-level golden
+    cases key by source conversation external id plus the rendered issue name.
+    """
+
+    conversation_external_id: str
+    issue: str
+
+
 class RetrievalCase(_GoldenModel):
     """Issue in, expected knowledge-base sources in the top-k out.
 
@@ -115,6 +126,14 @@ class RetrievalCase(_GoldenModel):
     issue: Issue
     limit: int = Field(default=5, ge=1)
     expected_conversation_external_ids: list[str] = Field(min_length=1)
+    acceptable_retrieved_documents: list[RetrievalDocumentRef] = Field(
+        default_factory=list,
+        description=(
+            "Additional explicitly accepted KnowledgeDocuments, used when a "
+            "retrieved document is semantically equivalent but its source "
+            "conversation is outside the broad expected source pool."
+        ),
+    )
     expect_filter_relaxed: bool | None = None
     min_recall: float = Field(default=1.0, ge=0.0, le=1.0)
     min_precision: float | None = Field(
