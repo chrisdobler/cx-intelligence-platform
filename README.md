@@ -94,6 +94,14 @@ not just observed:
   detected anomaly (severity, triggering signals, baseline → current metrics,
   recommended action), and the raw markdown report as a collapsible section.
   The report remains served at `GET /api/anomalies/report`.
+- **Resolution Assistant panel** — grounded decision support for agents:
+  describe a new ticket (structured via Prompt #1, never persisted) or point
+  at an analyzed conversation (with a per-issue picker for multi-issue
+  conversations), and get a recommendation grounded exclusively in retrieved
+  KnowledgeDocuments — with the cited evidence highlighted, the retrieval
+  provenance shown, and an honest "no sufficiently similar historical
+  resolutions were found" when the evidence isn't there. The stage card's
+  **Open** button jumps here.
 - **Quick Actions / Links** — jump to the API docs, the database UI, and the
   in-page Anomaly Analysis panel.
 
@@ -115,6 +123,8 @@ Endpoints:
 | `GET /api/anomalies/report` | The anomaly report, rendered from persisted anomalies (markdown) |
 | `GET /api/anomalies/trends` | Per-day frequency of the top anomaly issues (backs the trend chart) |
 | `GET /api/knowledge/search` | Metadata-first semantic search over the knowledge base (`q`, `product`, `limit`) |
+| `POST /api/resolution` | Grounded resolution recommendation for one issue (`conversation_id` or free-text `text`) |
+| `GET /api/resolution/issues` | The selectable issues of one analyzed conversation (backs the issue picker) |
 | `/api/config` | Non-secret configuration (secrets reported only as set/unset) |
 | `POST /api/config/google-key` | Save the Google AI Studio key from the onboarding card |
 | `http://localhost:8080` | Adminer database UI (auto-login to dev database `cx`) |
@@ -138,14 +148,6 @@ src/cxintel/
   ingestion/         # Phase 2  — dataset loading + idempotent import
   llm.py             # provider abstraction (Google AI Studio, native structured output)
   understanding/     # Phase 3  — StructuredConversation schema, Prompt #1, service
-- **Resolution Assistant panel** — grounded decision support for agents:
-  describe a new ticket (structured via Prompt #1, never persisted) or point
-  at an analyzed conversation (with a per-issue picker for multi-issue
-  conversations), and get a recommendation grounded exclusively in retrieved
-  KnowledgeDocuments — with the cited evidence highlighted, the retrieval
-  provenance shown, and an honest "no sufficiently similar historical
-  resolutions were found" when the evidence isn't there. The stage card's
-  **Open** button jumps here.
   anomaly/           # Phase 4  — deterministic detector, Prompt #3, service, report
   knowledge_base/    # Phase 5  — KnowledgeDocument, knowledge_text, embeddings, retrieval
   resolution_assistant/ # Phase 6  — ContextBundle, Prompt #2, grounded resolution service
@@ -168,8 +170,6 @@ data/raw/            # place sample_tickets_v6.json here (git-ignored)
 | `db-migrate` | Apply database migrations |
 | `fmt` | Format with Ruff |
 | `lint` / `lint-fix` | Lint (and auto-fix) with Ruff |
-| `POST /api/resolution` | Grounded resolution recommendation for one issue (`conversation_id` or free-text `text`) |
-| `GET /api/resolution/issues` | The selectable issues of one analyzed conversation (backs the issue picker) |
 | `typecheck` | Type-check with mypy (strict) |
 | `test` | Run pytest |
 | `check` | `lint` + `typecheck` + `test` (CI gate) |
@@ -197,6 +197,9 @@ app analyze        # deterministic anomaly detection vs the Day-1 baseline
 app report         # print the anomaly report (from persisted anomalies)
 app build-kb       # build the knowledge base (resumable; re-embeds only changes)
 app search "pod leaking water" --product "Pod 5"  # semantic knowledge search
+app chat "water pooling under the hub" --product "Pod 4"  # resolve a new ticket
+app chat -c conv_72912dd7 --issue 1  # resolve one issue of an analyzed conversation
+app chat           # interactive mode: describe tickets, get grounded recommendations
 app pipeline       # run every incomplete pipeline stage in dependency order
 app runs           # pipeline audit trail — recent stage runs, newest first
 app bottlenecks --sort llm_seconds  # slowest LLM observations by phase timing
@@ -206,6 +209,3 @@ app bottlenecks --sort llm_seconds  # slowest LLM observations by phase timing
 
 All settings come from environment variables (or `.env`); see `.env.example`.
 Key ones: `GOOGLE_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`, `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, `DATABASE_URL`, `SLACK_WEBHOOK_URL`, `LOG_LEVEL`.
-app chat "water pooling under the hub" --product "Pod 4"  # resolve a new ticket
-app chat -c conv_72912dd7 --issue 1  # resolve one issue of an analyzed conversation
-app chat           # interactive mode: describe tickets, get grounded recommendations

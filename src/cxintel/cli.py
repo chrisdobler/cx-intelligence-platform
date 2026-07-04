@@ -9,7 +9,6 @@ Assistant (Phase 6). Installed as the ``app`` console script.
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer

@@ -36,13 +36,13 @@ from ..pipeline.orchestrator import (
 )
 from ..pipeline.reset import reset_derived_data
 from ..pipeline.stages import StageKind
-from .status import PlatformStatus, build_status
 from ..resolution_assistant.schema import IssueOption, ResolutionResult
+from .status import PlatformStatus, build_status
 
-_STATIC_DIR = Path(__file__).parent / "static"
 if TYPE_CHECKING:
     from ..resolution_assistant.service import ResolutionAssistantService
 
+_STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="Conversation Intelligence Platform", version=__version__)
 
@@ -269,15 +269,6 @@ def api_knowledge_search(
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
 
 
-@app.get("/api/pipeline/llm-observations")
-def pipeline_llm_observations(
-    limit: int = Query(default=20, ge=1, le=200),
-    sort: str = Query(default="total_seconds"),
-    pipeline_run_id: Annotated[uuid.UUID | None, Query()] = None,
-) -> list[LLMObservationRecord]:
-    """Slowest per-conversation LLM timing observations."""
-    try:
-        return llm_observations(limit=limit, sort=sort, pipeline_run_id=pipeline_run_id)
 class ResolutionRequest(BaseModel):
     """Body for POST /api/resolution — exactly one of conversation_id or text."""
 
@@ -356,6 +347,15 @@ def api_resolution_issues(
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
 
 
+@app.get("/api/pipeline/llm-observations")
+def pipeline_llm_observations(
+    limit: int = Query(default=20, ge=1, le=200),
+    sort: str = Query(default="total_seconds"),
+    pipeline_run_id: Annotated[uuid.UUID | None, Query()] = None,
+) -> list[LLMObservationRecord]:
+    """Slowest per-conversation LLM timing observations."""
+    try:
+        return llm_observations(limit=limit, sort=sort, pipeline_run_id=pipeline_run_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

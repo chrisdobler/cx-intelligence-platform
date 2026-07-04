@@ -40,6 +40,12 @@ Version 1. A dedicated taxonomy service would likely be appropriate for a
 larger production deployment but was intentionally deferred to keep the
 architecture simple while still preserving a clear evolution path.
 
+Canonical anomalies are also self-contained reporting artifacts. Each anomaly
+stores both the observation timestamp and the baseline timestamp directly on
+the artifact, allowing reports and timeline visualizations to consume anomaly
+data without reconstructing temporal context from the underlying
+conversations.
+
 ## 4. Part 2 — Resolution Assistant
 - KnowledgeDocument generation
 - Deterministic knowledge synthesis

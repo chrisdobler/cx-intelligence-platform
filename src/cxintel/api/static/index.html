@@ -184,34 +184,6 @@
     }
     .raw-report .raw-link { font-size: 12.5px; margin-left: 10px; color: var(--accent); }
 
-    /* Recent runs (audit trail) */
-    .runs-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-    .runs-table td { padding: 5px 10px 5px 0; border-top: 1px solid var(--border); vertical-align: top; }
-    .runs-table tr:first-child td { border-top: none; }
-    .runs-table .stage { font-weight: 600; white-space: nowrap; }
-    .runs-table .meta { color: var(--muted); white-space: nowrap; }
-    .runs-table .detail { color: var(--muted); }
-    .runs-table .detail.err { color: var(--red); }
-    .runs-table .dot { width: 9px; height: 9px; margin-top: 5px; }
-    .runs-empty { color: var(--muted); font-size: 13px; }
-
-    /* Metrics */
-    .metric .value { font-size: 24px; font-weight: 700; }
-    .metric .label { color: var(--muted); font-size: 13px; }
-
-    /* Danger zone */
-    .danger-zone { border-color: #fda29b; background: #fffafa; }
-    .danger-zone .danger-copy { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
-    .danger-zone .danger-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .danger-zone .danger-msg { color: var(--muted); font-size: 13px; }
-    .danger-zone .danger-msg.ok { color: var(--green); }
-    .danger-zone .danger-msg.err { color: var(--red); }
-
-    /* Quick actions */
-    .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    @media (max-width: 720px) { .actions { grid-template-columns: 1fr 1fr; } }
-    .action {
-      display: flex; flex-direction: column; justify-content: center; gap: 4px;
     /* Resolution Assistant */
     .res-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
     .res-tab {
@@ -260,6 +232,34 @@
     .res-doc .doc-resolution { margin: 4px 0 0; color: var(--muted); }
     .res-retrieval { margin-top: 10px; color: var(--muted); font-size: 12.5px; }
 
+    /* Recent runs (audit trail) */
+    .runs-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .runs-table td { padding: 5px 10px 5px 0; border-top: 1px solid var(--border); vertical-align: top; }
+    .runs-table tr:first-child td { border-top: none; }
+    .runs-table .stage { font-weight: 600; white-space: nowrap; }
+    .runs-table .meta { color: var(--muted); white-space: nowrap; }
+    .runs-table .detail { color: var(--muted); }
+    .runs-table .detail.err { color: var(--red); }
+    .runs-table .dot { width: 9px; height: 9px; margin-top: 5px; }
+    .runs-empty { color: var(--muted); font-size: 13px; }
+
+    /* Metrics */
+    .metric .value { font-size: 24px; font-weight: 700; }
+    .metric .label { color: var(--muted); font-size: 13px; }
+
+    /* Danger zone */
+    .danger-zone { border-color: #fda29b; background: #fffafa; }
+    .danger-zone .danger-copy { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+    .danger-zone .danger-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .danger-zone .danger-msg { color: var(--muted); font-size: 13px; }
+    .danger-zone .danger-msg.ok { color: var(--green); }
+    .danger-zone .danger-msg.err { color: var(--red); }
+
+    /* Quick actions */
+    .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    @media (max-width: 720px) { .actions { grid-template-columns: 1fr 1fr; } }
+    .action {
+      display: flex; flex-direction: column; justify-content: center; gap: 4px;
       background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
       padding: 18px; min-height: 84px; text-decoration: none; color: var(--text);
       cursor: pointer; transition: border-color .12s, box-shadow .12s; text-align: left;
@@ -324,6 +324,38 @@
       </div>
     </section>
 
+    <section id="resolution">
+      <h2>Resolution Assistant</h2>
+      <div class="card">
+        <div class="res-tabs" role="tablist">
+          <button class="res-tab active" id="res-tab-ticket" type="button">New ticket</button>
+          <button class="res-tab" id="res-tab-conversation" type="button">Existing conversation</button>
+        </div>
+        <form class="res-form" id="res-form">
+          <div id="res-ticket-inputs">
+            <textarea id="res-text" placeholder="Describe the customer's problem, e.g. “water is pooling under the Pod 4 hub every night”"
+              aria-label="Ticket text"></textarea>
+            <div class="row" style="margin-top:8px;">
+              <input id="res-product" placeholder="Product (optional), e.g. Pod 4" aria-label="Product" />
+            </div>
+          </div>
+          <div id="res-conversation-inputs" style="display:none;">
+            <div class="row">
+              <input id="res-conversation-id" placeholder="Conversation id, e.g. conv_72912dd7 or a UUID"
+                aria-label="Conversation id" />
+              <button class="btn" type="button" id="res-load-issues">Load issues</button>
+            </div>
+            <ul class="res-issues" id="res-issues"></ul>
+          </div>
+          <div class="row">
+            <button class="btn primary" type="submit" id="res-submit">Get Recommendation</button>
+            <span class="res-msg" id="res-msg"></span>
+          </div>
+        </form>
+        <div class="res-result" id="res-result" style="display:none;" aria-live="polite"></div>
+      </div>
+    </section>
+
     <section>
       <h2>Danger Zone</h2>
       <div class="card danger-zone">
@@ -365,38 +397,6 @@
 
     <footer id="footer">Conversation Intelligence Platform</footer>
   </div>
-
-    <section id="resolution">
-      <h2>Resolution Assistant</h2>
-      <div class="card">
-        <div class="res-tabs" role="tablist">
-          <button class="res-tab active" id="res-tab-ticket" type="button">New ticket</button>
-          <button class="res-tab" id="res-tab-conversation" type="button">Existing conversation</button>
-        </div>
-        <form class="res-form" id="res-form">
-          <div id="res-ticket-inputs">
-            <textarea id="res-text" placeholder="Describe the customer's problem, e.g. “water is pooling under the Pod 4 hub every night”"
-              aria-label="Ticket text"></textarea>
-            <div class="row" style="margin-top:8px;">
-              <input id="res-product" placeholder="Product (optional), e.g. Pod 4" aria-label="Product" />
-            </div>
-          </div>
-          <div id="res-conversation-inputs" style="display:none;">
-            <div class="row">
-              <input id="res-conversation-id" placeholder="Conversation id, e.g. conv_72912dd7 or a UUID"
-                aria-label="Conversation id" />
-              <button class="btn" type="button" id="res-load-issues">Load issues</button>
-            </div>
-            <ul class="res-issues" id="res-issues"></ul>
-          </div>
-          <div class="row">
-            <button class="btn primary" type="submit" id="res-submit">Get Recommendation</button>
-            <span class="res-msg" id="res-msg"></span>
-          </div>
-        </form>
-        <div class="res-result" id="res-result" style="display:none;" aria-live="polite"></div>
-      </div>
-    </section>
 
   <script>
     const adminerUrl = `${location.protocol}//${location.hostname}:8080`;
@@ -880,34 +880,6 @@ Imported conversations and messages will NOT be modified.`;
       if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
     });
 
-    let jobWasRunning = false;
-    async function load() {
-      try {
-        const res = await fetch("/api/status");
-        const data = await res.json();
-        renderServices(data.services, true);
-        renderAI(data.ai);
-        renderStageCards(data.pipeline, data.job);
-        renderJob(data.job, data.pipeline);
-        renderMetrics(data.metrics);
-        await loadRuns();
-        const running = Boolean(data.job && data.job.state === "running");
-        if (jobWasRunning && !running) loadAnomalyPanel();
-        jobWasRunning = running;
-        if (running) startPolling();
-        else stopPolling();
-      } catch (e) {
-        document.getElementById("services").innerHTML =
-          `<div class="service"><span class="dot down"></span>
-           <span><span class="name">FastAPI API</span><br>
-           <span class="detail">status endpoint unreachable</span></span></div>`;
-      }
-    }
-    load();
-    loadAnomalyPanel();
-  </script>
-</body>
-</html>
     /* --- Resolution Assistant --- */
     let resMode = "ticket";
 
@@ -1075,3 +1047,31 @@ Imported conversations and messages will NOT be modified.`;
       el.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
 
+    let jobWasRunning = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/status");
+        const data = await res.json();
+        renderServices(data.services, true);
+        renderAI(data.ai);
+        renderStageCards(data.pipeline, data.job);
+        renderJob(data.job, data.pipeline);
+        renderMetrics(data.metrics);
+        await loadRuns();
+        const running = Boolean(data.job && data.job.state === "running");
+        if (jobWasRunning && !running) loadAnomalyPanel();
+        jobWasRunning = running;
+        if (running) startPolling();
+        else stopPolling();
+      } catch (e) {
+        document.getElementById("services").innerHTML =
+          `<div class="service"><span class="dot down"></span>
+           <span><span class="name">FastAPI API</span><br>
+           <span class="detail">status endpoint unreachable</span></span></div>`;
+      }
+    }
+    load();
+    loadAnomalyPanel();
+  </script>
+</body>
+</html>

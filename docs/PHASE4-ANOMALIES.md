@@ -51,9 +51,9 @@ Suggested schema:
 {
   "issue": "Pod Overheating",
 
-  "observation_date": "2026-02-26T12:00:00+00:00",
+  "observation_date": "2026-02-26T12:00:00Z",
 
-  "baseline_date": "2026-02-25T12:00:00+00:00",
+  "baseline_date": "2026-02-25T12:00:00Z",
 
   "severity": "critical",
 
@@ -74,8 +74,21 @@ Suggested schema:
 }
 ```
 
-The anomaly object becomes the canonical artifact consumed by Slack alerts,
-reports, dashboards, and future workflows.
+The anomaly stores timestamp anchors directly.
+
+`observation_date` represents the reporting bucket in which the anomaly was
+observed.
+
+`baseline_date` represents the baseline bucket used for comparison.
+
+These timestamps are derived deterministically from the earliest
+`Conversation.started_at` contained within each aggregation bucket.
+
+The anomaly therefore becomes a completely self-contained reporting artifact.
+
+Reporting, visualization, and future timeline views consume the anomaly's
+persisted temporal fields directly rather than reconstructing temporal context
+through joins.
 
 ---
 
@@ -84,12 +97,8 @@ reports, dashboards, and future workflows.
 Anomalies represent aggregate operational behavior over an observation period
 rather than an individual conversation.
 
-Observation dates are stored directly on the canonical Anomaly artifact so
-reporting and visualization layers do not need to reconstruct temporal context
-through joins. In Phase 4 v1, `observation_date` and `baseline_date` are
-nullable timestamp anchors populated from the earliest `Conversation.started_at`
-in each aggregation bucket; existing rows may remain null until anomaly
-detection is rerun.
+In Phase 4 v1, `observation_date` and `baseline_date` are nullable timestamp
+anchors. Existing rows may remain null until anomaly detection is rerun.
 
 ---
 

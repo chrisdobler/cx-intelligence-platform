@@ -192,7 +192,9 @@ SQL query) are compared against Day 1 using four independent signals:
 
 Signals for the same (day, issue) merge into one **canonical Anomaly** —
 issue, derived severity, the signals that fired, the supporting metrics, a
-deterministic summary, and a recommended action — persisted in `anomalies`
+deterministic summary, temporal observation anchors
+(`observation_date` and `baseline_date`), and a recommended action —
+persisted in `anomalies`
 and regenerated on every run (derived data). Detection thresholds are
 explicit settings, so every anomaly explains *why* it was detected rather
 than reporting an opaque score.
