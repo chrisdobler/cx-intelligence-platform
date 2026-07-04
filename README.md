@@ -85,8 +85,13 @@ not just observed:
   Capabilities card accepts a key via a password-style input and saves it to
   your local `.env` (never echoed back); AI-stage prerequisites flip to met
   immediately.
+- **Anomaly Analysis panel** — an expandable dashboard inside the Anomaly
+  Detection stage: an issue-frequency trend chart across days, one card per
+  detected anomaly (severity, triggering signals, baseline → current metrics,
+  recommended action), and the raw markdown report as a collapsible section.
+  The report remains served at `GET /api/anomalies/report`.
 - **Quick Actions / Links** — jump to the API docs, the database UI, and the
-  anomaly report (rendered live from the detected anomalies).
+  in-page Anomaly Analysis panel.
 
 The CLI, the REST API, and the landing page all drive the same orchestration
 layer — `app ingest` and the Ingestion card's Run button execute the same code.
@@ -104,6 +109,7 @@ Endpoints:
 | `GET /api/pipeline/runs` | Pipeline audit trail — recent stage runs, newest first |
 | `GET /api/anomalies` | Detected anomalies (canonical artifact: signals, metrics, actions) |
 | `GET /api/anomalies/report` | The anomaly report, rendered from persisted anomalies (markdown) |
+| `GET /api/anomalies/trends` | Per-day frequency of the top anomaly issues (backs the trend chart) |
 | `GET /api/knowledge/search` | Metadata-first semantic search over the knowledge base (`q`, `product`, `limit`) |
 | `/api/config` | Non-secret configuration (secrets reported only as set/unset) |
 | `POST /api/config/google-key` | Save the Google AI Studio key from the onboarding card |

@@ -38,6 +38,7 @@ def test_landing_page_served_at_root() -> None:
     assert "Conversation Intelligence Platform" in response.text
     assert "Danger Zone" in response.text
     assert "Reset Derived Data" in response.text
+    assert "Anomaly Analysis" in response.text
 
 
 def test_status_endpoint_shape() -> None:

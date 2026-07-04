@@ -138,8 +138,51 @@
     .prereqs li.met { color: var(--muted); }
     .prereqs li.unmet { color: var(--yellow); }
     .prereqs .mark { display: inline-block; width: 16px; }
-    .stage-card .foot { display: flex; align-items: center; gap: 10px; margin-top: auto; }
+    .stage-card .foot { display: flex; align-items: center; gap: 10px; margin-top: auto; flex-wrap: wrap; }
     .stage-card .reason { color: var(--muted); font-size: 12.5px; }
+
+    /* Anomaly Analysis (inline, inside the Anomaly Detection stage card) */
+    .stage-card.expanded { grid-column: 1 / -1; }
+    .anomaly-inline { margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .anomaly-inline .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .anomaly-inline .panel-title { font-weight: 700; font-size: 16px; }
+    .anomaly-inline .panel-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .anomaly-inline h3 {
+      font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); margin: 18px 0 10px; font-weight: 600;
+    }
+    .trend-chart { width: 100%; height: auto; display: block; }
+    .trend-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+    .trend-legend .li { display: inline-flex; align-items: center; gap: 6px; }
+    .trend-legend .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+    .anomaly-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    @media (max-width: 720px) { .anomaly-cards { grid-template-columns: 1fr; } }
+    .anomaly-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+    .anomaly-card .head { display: flex; align-items: center; gap: 10px; }
+    .anomaly-card .issue { font-weight: 700; flex: 1; }
+    .sev { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 8px; border-radius: 999px; flex: none; }
+    .sev.critical, .sev.high { background: #fee4e2; color: #b42318; }
+    .sev.medium { background: #fef0c7; color: #b54708; }
+    .sev.low { background: #eef1f5; color: var(--muted); }
+    .signal-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #eef1f5; color: var(--accent); }
+    .anomaly-metrics { display: flex; align-items: baseline; gap: 18px; }
+    .anomaly-metrics .m .k { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .anomaly-metrics .m .v { font-size: 20px; font-weight: 750; }
+    .anomaly-metrics .delta { font-size: 20px; font-weight: 800; color: var(--red); }
+    .anomaly-metrics .delta.new { color: var(--yellow); }
+    .anomaly-card .why { margin: 0; color: var(--muted); font-size: 13px; }
+    .anomaly-action { border-left: 3px solid var(--accent); background: #f6f7f9; border-radius: 6px; padding: 8px 10px; font-size: 13px; }
+    .anomaly-action .k { font-weight: 700; }
+    .anomaly-empty { color: var(--muted); font-size: 13px; }
+    .raw-report summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--muted); }
+    .raw-report[open] summary { margin-bottom: 8px; }
+    .raw-report pre {
+      margin: 0; padding: 12px; background: #f6f7f9; border: 1px solid var(--border);
+      border-radius: 8px; overflow-x: auto; font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
+    }
+    .raw-report .raw-link { font-size: 12.5px; margin-left: 10px; color: var(--accent); }
 
     /* Recent runs (audit trail) */
     .runs-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -255,10 +298,10 @@
           <span class="t">Open Database UI</span>
           <span class="s">Inspect PostgreSQL with Adminer</span>
         </a>
-        <a class="action" href="/api/anomalies/report" target="_blank" rel="noopener">
-          <span class="t">View Anomaly Report</span>
-          <span class="s">Detected anomalies vs the Day-1 baseline</span>
-        </a>
+        <button class="action" type="button" id="action-anomalies">
+          <span class="t">View Anomaly Analysis</span>
+          <span class="s">Trends, detected anomalies, and the report</span>
+        </button>
       </div>
     </section>
 
@@ -414,7 +457,16 @@
         } else {
           button = `<button class="btn" data-stage="${st.key}" data-action="${st.action}" ${disabled ? "disabled" : ""}>${ACTION_LABELS[st.action] ?? "Run"}</button>`;
         }
-        return `<div class="card stage-card ${activeStage === st.key ? "active" : ""}">
+        let inlinePanel = "";
+        if (st.key === "anomaly") {
+          // Read-only analysis panel — available even while a job is running.
+          button += `<button class="btn" data-panel-toggle>${anomalyPanelOpen ? "Hide Analysis" : "Show Analysis"}</button>`;
+          if (anomalyPanelOpen) {
+            inlinePanel = `<div class="anomaly-inline" id="anomaly-panel" aria-live="polite"></div>`;
+          }
+        }
+        const expanded = st.key === "anomaly" && anomalyPanelOpen ? "expanded" : "";
+        return `<div class="card stage-card ${expanded} ${activeStage === st.key ? "active" : ""}">
           <div class="stage-head">
             ${badge(st, i)}
             <span class="dot ${dot}"></span>
@@ -425,12 +477,18 @@
           <ul class="prereqs">${prereqs}</ul>
           <p class="produces">Produces: ${st.outputs.join(", ")}</p>
           <div class="foot">${button}${reason ? `<span class="reason">${reason}</span>` : ""}</div>
+          ${inlinePanel}
         </div>`;
       }).join("");
       for (const btn of el.querySelectorAll("button[data-stage]")) {
         btn.addEventListener("click", () =>
           runStage(btn.getAttribute("data-stage"), btn.getAttribute("data-option")));
       }
+      const panelToggle = el.querySelector("button[data-panel-toggle]");
+      if (panelToggle) {
+        panelToggle.addEventListener("click", () => toggleAnomalyPanel(!anomalyPanelOpen));
+      }
+      if (anomalyPanelOpen) injectAnomalyPanel();
     }
 
     function renderProgress(job) {
@@ -610,17 +668,171 @@ Imported conversations and messages will NOT be modified.`;
       }
     }
 
+    /* --- Anomaly Analysis panel ---------------------------------------- */
+    let anomalyPanelOpen = false;
+    let anomalyPanelHTML = "";   // cached markup, re-injected after every re-render
+    let rawReportOpen = false;   // <details> state survives destructive re-renders
+    let lastStatus = null;       // last /api/status payload (to re-render on toggle)
+    const TREND_COLORS = ["#1f2a44", "#f04438", "#f79009", "#12b76a", "#7a5af8"];
+    const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
+    const fmtSignal = (s) =>
+      s.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
+    function trendChartSVG(trends) {
+      const { days, series } = trends;
+      if (!days.length || !series.length) return "";
+      const W = 920, H = 240, L = 44, R = 12, T = 12, B = 30;
+      const maxCount = Math.max(1, ...series.flatMap((s) => s.counts));
+      const x = (i) => days.length === 1
+        ? L + (W - L - R) / 2
+        : L + (W - L - R) * (i / (days.length - 1));
+      const y = (v) => T + (H - T - B) * (1 - v / maxCount);
+      const ticks = [...new Set([0, Math.round(maxCount / 2), maxCount])];
+      const grid = ticks.map((t) =>
+        `<line x1="${L}" y1="${y(t)}" x2="${W - R}" y2="${y(t)}" stroke="#e4e7ec"/>
+         <text x="${L - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="#667085">${t}</text>`
+      ).join("");
+      const xLabels = days.map((d, i) =>
+        `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="#667085">Day ${d}</text>`
+      ).join("");
+      const lines = series.map((s, si) => {
+        const color = TREND_COLORS[si % TREND_COLORS.length];
+        const points = s.counts.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+        const dots = s.counts.map((v, i) =>
+          `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="${color}"><title>${esc(s.issue)} — Day ${days[i]}: ${v}</title></circle>`
+        ).join("");
+        return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2"/>${dots}`;
+      }).join("");
+      const legend = series.map((s, si) =>
+        `<span class="li"><span class="swatch" style="background:${TREND_COLORS[si % TREND_COLORS.length]}"></span>${esc(s.issue)}</span>`
+      ).join("");
+      return `<svg class="trend-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Issue frequency by day">${grid}${xLabels}${lines}</svg>
+        <div class="trend-legend">${legend}</div>`;
+    }
+
+    function anomalyCardHTML(a) {
+      const chips = a.signals.map((s) => `<span class="chip">✓ ${esc(fmtSignal(s))}</span>`).join("");
+      const pc = a.metrics.percent_change;
+      const delta = (pc === null || pc === undefined)
+        ? `<div class="delta new">new</div>`
+        : `<div class="delta">${pc >= 0 ? "+" : ""}${Math.round(pc)}%</div>`;
+      return `<div class="anomaly-card">
+        <div class="head"><span class="issue">${esc(a.issue)}</span><span class="sev ${esc(a.severity)}">${esc(a.severity)}</span></div>
+        <div class="signal-chips">${chips}</div>
+        <div class="anomaly-metrics">
+          <div class="m"><div class="k">Baseline</div><div class="v">${fmtNum(a.metrics.baseline_count)}</div></div>
+          <div class="m"><div class="k">Day ${a.day}</div><div class="v">${fmtNum(a.metrics.current_count)}</div></div>
+          ${delta}
+        </div>
+        <p class="why">${esc(a.summary)}</p>
+        <div class="anomaly-action"><span class="k">Recommended action:</span> ${esc(a.recommended_action)}</div>
+      </div>`;
+    }
+
+    function injectAnomalyPanel() {
+      const el = document.getElementById("anomaly-panel");
+      if (!el) return;
+      el.innerHTML = anomalyPanelHTML
+        || `<div class="panel-title">Anomaly Analysis</div><p class="anomaly-empty">Loading…</p>`;
+      const details = el.querySelector("details.raw-report");
+      if (details) {
+        details.open = rawReportOpen;
+        details.addEventListener("toggle", () => { rawReportOpen = details.open; });
+      }
+    }
+
+    async function loadAnomalyPanel() {
+      let trends, anomalies, report, runs;
+      try {
+        const [tRes, aRes, rRes, runsRes] = await Promise.all([
+          fetch("/api/anomalies/trends"),
+          fetch("/api/anomalies"),
+          fetch("/api/anomalies/report"),
+          fetch("/api/pipeline/runs?limit=20"),
+        ]);
+        trends = await tRes.json();
+        anomalies = await aRes.json();
+        report = await rRes.text();
+        runs = await runsRes.json();
+      } catch (e) {
+        anomalyPanelHTML = `<div class="panel-title">Anomaly Analysis</div>
+          <p class="anomaly-empty">Could not load anomaly data — is the API reachable?</p>`;
+        injectAnomalyPanel();
+        return;
+      }
+      if (!anomalies.length) {
+        // Explain the "ran for 0 seconds" case: the last run's own summary
+        // (e.g. "Only the baseline day is analyzed") tells the operator why.
+        const lastRun = runs.find((r) => r.stage_key === "anomaly" && r.status !== "running");
+        const lastLine = lastRun
+          ? `Last run (${new Date(lastRun.started_at).toLocaleString()}): ${lastRun.summary || lastRun.error || lastRun.status}`
+          : "No anomaly run recorded yet — run Anomaly Detection first.";
+        anomalyPanelHTML = `
+          <div class="panel-title">Anomaly Analysis</div>
+          <p class="anomaly-empty" style="margin-top:8px"><strong>${esc(lastLine)}</strong></p>
+          <p class="anomaly-empty">Anomaly detection compares each later day against the
+          Day-1 baseline. If only Day 1 has been analyzed so far there is nothing to
+          compare yet — analyze Day 2+ first (Conversation Understanding →
+          Run Full Dataset), then run Anomaly Detection again.</p>`;
+        injectAnomalyPanel();
+        return;
+      }
+      const ordered = [...anomalies].sort((a, b) =>
+        (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9)
+        || Math.abs(b.metrics.percent_change ?? 0) - Math.abs(a.metrics.percent_change ?? 0));
+      anomalyPanelHTML = `
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Anomaly Analysis</div>
+            <div class="panel-sub">${anomalies.length} anomalies detected vs the Day-1 baseline</div>
+          </div>
+        </div>
+        <h3>Issue Frequency by Day</h3>
+        ${trendChartSVG(trends) || `<p class="anomaly-empty">No trend data available.</p>`}
+        <h3>Detected Anomalies</h3>
+        <div class="anomaly-cards">${ordered.map(anomalyCardHTML).join("")}</div>
+        <h3>Raw Report
+          <a class="raw-link" href="/api/anomalies/report" target="_blank" rel="noopener">open raw ↗</a>
+        </h3>
+        <details class="raw-report">
+          <summary>Show the generated markdown report</summary>
+          <pre>${esc(report)}</pre>
+        </details>`;
+      injectAnomalyPanel();
+    }
+
+    function toggleAnomalyPanel(open, scroll = false) {
+      anomalyPanelOpen = open;
+      // Re-render the cards so the anomaly card expands/collapses in place.
+      if (lastStatus) renderStageCards(lastStatus.pipeline, lastStatus.job);
+      if (open) {
+        injectAnomalyPanel(); // show cached content immediately…
+        loadAnomalyPanel();   // …then refresh it
+        if (scroll) {
+          const card = document.getElementById("anomaly-panel")?.closest(".stage-card");
+          if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+    }
+    document.getElementById("action-anomalies").addEventListener("click", () =>
+      toggleAnomalyPanel(true, true));
+
+    let jobWasRunning = false;
     async function load() {
       try {
         const res = await fetch("/api/status");
         const data = await res.json();
+        lastStatus = data;
         renderServices(data.services, true);
         renderAI(data.ai);
         renderStageCards(data.pipeline, data.job);
         renderJob(data.job, data.pipeline);
         renderMetrics(data.metrics);
         await loadRuns();
-        if (data.job && data.job.state === "running") startPolling();
+        const running = Boolean(data.job && data.job.state === "running");
+        if (jobWasRunning && !running && anomalyPanelOpen) loadAnomalyPanel();
+        jobWasRunning = running;
+        if (running) startPolling();
         else stopPolling();
       } catch (e) {
         document.getElementById("services").innerHTML =

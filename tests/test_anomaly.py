@@ -240,6 +240,52 @@ def test_api_anomalies_endpoint_and_report(
     assert "leak" in report.text
 
 
+def test_api_anomaly_trends(
+    factory: Any, db_session: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from cxintel.api.app import app
+
+    client = TestClient(app)
+    # No anomalies yet → empty trends (nothing to chart).
+    assert client.get("/api/anomalies/trends").json() == {"days": [], "series": []}
+
+    seed_spike_scenario(db_session)
+    make_service(factory, FakeSlackProvider(), tmp_path).run()
+
+    trends = client.get("/api/anomalies/trends").json()
+    assert trends["days"] == [1, 2]
+    by_issue = {s["issue"]: s["counts"] for s in trends["series"]}
+    # Counts per day for every anomaly issue, aligned with `days`.
+    assert by_issue["leak"] == [4, 8]
+    assert by_issue["ghost noises"] == [0, 1]
+
+
+def test_api_anomaly_trends_caps_series_at_top_five(
+    factory: Any, db_session: Session, tmp_path: Path
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from cxintel.api.app import app
+
+    # Eight distinct novel issues on day 2 → far more anomalies than the cap.
+    seed_catalog(db_session, "leak")
+    for i in range(4):
+        seed_issue(db_session, f"t1_{i}", 1, "leak")
+    for n in range(8):
+        for i in range(n + 1):  # different volumes so ranking is deterministic
+            seed_issue(
+                db_session, f"t2_{n}_{i}", 2, f"novel issue {n}", matched=False, severity="high"
+            )
+    make_service(factory, FakeSlackProvider(), tmp_path).run()
+
+    trends = TestClient(app).get("/api/anomalies/trends").json()
+    assert len(trends["series"]) == 5
+    for series in trends["series"]:
+        assert len(series["counts"]) == len(trends["days"])
+
+
 def test_cli_analyze_and_report(
     factory: Any, db_session: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

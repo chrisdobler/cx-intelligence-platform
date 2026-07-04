@@ -154,6 +154,70 @@ def api_anomalies() -> list[AnomalyRecord]:
     return _anomaly_rows()
 
 
+class TrendSeries(BaseModel):
+    """Per-day conversation-issue counts for one anomaly issue."""
+
+    issue: str
+    counts: list[int]  # aligned with AnomalyTrends.days
+
+
+class AnomalyTrends(BaseModel):
+    """Issue-frequency-over-time data behind the control-center trend chart."""
+
+    days: list[int]
+    series: list[TrendSeries]
+
+
+_SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+_TRENDS_MAX_SERIES = 5
+
+
+@app.get("/api/anomalies/trends")
+def api_anomaly_trends() -> AnomalyTrends:
+    """Per-day frequency of the top anomaly issues (presentation data only).
+
+    Series are limited to the five most significant anomaly issues (by
+    severity, then absolute change). Empty when no anomalies are recorded or
+    the database is unavailable — detection itself is untouched.
+    """
+    from ..db import get_session_factory
+    from ..repositories import (
+        AnomalyRepository,
+        ConversationIssueRepository,
+        ConversationRepository,
+    )
+
+    try:
+        with get_session_factory()() as session:
+            anomalies = AnomalyRepository(session).all()
+            if not anomalies:
+                return AnomalyTrends(days=[], series=[])
+            ranked = sorted(
+                anomalies, key=lambda a: (_SEVERITY_RANK.get(a.severity, 9), -abs(a.delta))
+            )
+            top_issues: list[str] = []
+            for anomaly in ranked:
+                if anomaly.issue not in top_issues:
+                    top_issues.append(anomaly.issue)
+                if len(top_issues) == _TRENDS_MAX_SERIES:
+                    break
+            days = ConversationRepository(session).days()
+            issues = ConversationIssueRepository(session)
+            counts_by_day = {
+                day: {s.canonical_name: s.count for s in issues.day_issue_stats(day)}
+                for day in days
+            }
+    except Exception:
+        return AnomalyTrends(days=[], series=[])
+    return AnomalyTrends(
+        days=days,
+        series=[
+            TrendSeries(issue=issue, counts=[counts_by_day[d].get(issue, 0) for d in days])
+            for issue in top_issues
+        ],
+    )
+
+
 @app.get("/api/anomalies/report", response_class=PlainTextResponse)
 def api_anomaly_report() -> str:
     """The anomaly report, rendered from persisted anomalies (markdown)."""
