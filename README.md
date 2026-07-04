@@ -86,8 +86,9 @@ not just observed:
   Capabilities card accepts a key via a password-style input and saves it to
   your local `.env` (never echoed back); AI-stage prerequisites flip to met
   immediately.
-- **Anomaly Analysis panel** — an expandable dashboard inside the Anomaly
-  Detection stage: an issue-frequency trend chart across days, one card per
+- **Anomaly Analysis panel** — an operational dashboard embedded (always
+  visible) in the Anomaly Detection stage card, which spans the full width:
+  an issue-frequency trend chart across days, one card per
   detected anomaly (severity, triggering signals, baseline → current metrics,
   recommended action), and the raw markdown report as a collapsible section.
   The report remains served at `GET /api/anomalies/report`.

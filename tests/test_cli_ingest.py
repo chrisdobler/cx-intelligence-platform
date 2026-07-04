@@ -142,7 +142,7 @@ def test_understand_sample_and_full_flags(
 
             return schema.model_validate(FROZEN_V1_EXAMPLE)
 
-    monkeypatch.setattr("cxintel.llm.get_llm_provider", lambda: CannedProvider())
+    monkeypatch.setattr("cxintel.llm.get_llm_provider", lambda **kw: CannedProvider())
 
     sample = runner.invoke(app, ["understand"])
     assert sample.exit_code == 0, sample.output

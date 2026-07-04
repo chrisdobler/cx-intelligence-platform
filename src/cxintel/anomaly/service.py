@@ -146,9 +146,24 @@ class AnomalyService:
                 message=f"Day {day}: {len(detected)} anomalies detected.",
             )
 
-        alerts = [self._slack_alert(anomaly, result, reporter) for anomaly in anomalies]
-        rows = self._persist(anomalies, alerts)
-        self._deliver(alerts, result, reporter)
+        # Persist the canonical artifact FIRST (with deterministic alert text)
+        # so alert prose — an LLM nicety with a fallback — can never block it.
+        reporter.report(
+            total_work=len(comparable_days) + len(anomalies),
+            message=f"{len(anomalies)} anomalies detected — persisting…",
+        )
+        rows = self._persist(anomalies, [fallback_slack_message(a) for a in anomalies])
+
+        for anomaly, row in zip(anomalies, rows, strict=True):
+            text = self._slack_alert(anomaly, result, reporter)
+            if text != row.slack_message:
+                self._update_alert(row.id, text)
+                row.slack_message = text
+            self._deliver_one(text, result)
+            reporter.advance(
+                current_item=anomaly.issue,
+                message=f"Alert ready for '{anomaly.issue}'.",
+            )
         result.report_path = self._write_report(rows)
 
         result.anomalies = len(anomalies)
@@ -171,23 +186,19 @@ class AnomalyService:
             reporter.report(message=f"Alert for '{anomaly.issue}' used the fallback template.")
             return fallback_slack_message(anomaly)
 
-    def _deliver(
-        self, alerts: list[str], result: AnomalyResult, reporter: ProgressReporter
-    ) -> None:
-        if not self._webhook_url or not alerts:
+    def _deliver_one(self, text: str, result: AnomalyResult) -> None:
+        if not self._webhook_url:
             return
-        for text in alerts:
-            try:
-                response = httpx.post(
-                    self._webhook_url, json={"text": text}, timeout=_WEBHOOK_TIMEOUT_SECONDS
-                )
-                if response.status_code < 300:
-                    result.alerts_delivered += 1
-                else:
-                    logger.warning("slack webhook returned %s", response.status_code)
-            except Exception as exc:  # delivery is best-effort, never fatal
-                logger.warning("slack webhook delivery failed: %s", exc)
-        reporter.report(message=f"Slack: {result.alerts_delivered}/{len(alerts)} delivered.")
+        try:
+            response = httpx.post(
+                self._webhook_url, json={"text": text}, timeout=_WEBHOOK_TIMEOUT_SECONDS
+            )
+            if response.status_code < 300:
+                result.alerts_delivered += 1
+            else:
+                logger.warning("slack webhook returned %s", response.status_code)
+        except Exception as exc:  # delivery is best-effort, never fatal
+            logger.warning("slack webhook delivery failed: %s", exc)
 
     # -- persistence + report --------------------------------------------------
 
@@ -213,6 +224,13 @@ class AnomalyService:
             AnomalyRepository(session).replace_all(rows)
             session.commit()
         return rows
+
+    def _update_alert(self, anomaly_id: uuid.UUID, text: str) -> None:
+        with self._session_factory() as session:
+            row = session.get(Anomaly, anomaly_id)
+            if row is not None:
+                row.slack_message = text
+                session.commit()
 
     def _write_report(self, rows: list[Anomaly]) -> Path:
         from .reporting import render_report

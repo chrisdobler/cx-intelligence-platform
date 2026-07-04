@@ -243,7 +243,7 @@ def test_run_understand_sample_end_to_end(
     monkeypatch.setenv("RAW_DATA_PATH", str(dataset))
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")  # prerequisites met
     monkeypatch.chdir(Path(__file__).resolve().parent.parent)
-    monkeypatch.setattr("cxintel.llm.get_llm_provider", lambda: _CannedProvider())
+    monkeypatch.setattr("cxintel.llm.get_llm_provider", lambda **kw: _CannedProvider())
     from cxintel.config import get_settings
 
     get_settings.cache_clear()

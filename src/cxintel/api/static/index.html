@@ -457,15 +457,12 @@
         } else {
           button = `<button class="btn" data-stage="${st.key}" data-action="${st.action}" ${disabled ? "disabled" : ""}>${ACTION_LABELS[st.action] ?? "Run"}</button>`;
         }
-        let inlinePanel = "";
-        if (st.key === "anomaly") {
-          // Read-only analysis panel — available even while a job is running.
-          button += `<button class="btn" data-panel-toggle>${anomalyPanelOpen ? "Hide Analysis" : "Show Analysis"}</button>`;
-          if (anomalyPanelOpen) {
-            inlinePanel = `<div class="anomaly-inline" id="anomaly-panel" aria-live="polite"></div>`;
-          }
-        }
-        const expanded = st.key === "anomaly" && anomalyPanelOpen ? "expanded" : "";
+        // The anomaly card always carries its full-width analysis inline.
+        const isAnomaly = st.key === "anomaly";
+        const inlinePanel = isAnomaly
+          ? `<div class="anomaly-inline" id="anomaly-panel" aria-live="polite"></div>`
+          : "";
+        const expanded = isAnomaly ? "expanded" : "";
         return `<div class="card stage-card ${expanded} ${activeStage === st.key ? "active" : ""}">
           <div class="stage-head">
             ${badge(st, i)}
@@ -484,11 +481,7 @@
         btn.addEventListener("click", () =>
           runStage(btn.getAttribute("data-stage"), btn.getAttribute("data-option")));
       }
-      const panelToggle = el.querySelector("button[data-panel-toggle]");
-      if (panelToggle) {
-        panelToggle.addEventListener("click", () => toggleAnomalyPanel(!anomalyPanelOpen));
-      }
-      if (anomalyPanelOpen) injectAnomalyPanel();
+      injectAnomalyPanel();
     }
 
     function renderProgress(job) {
@@ -668,11 +661,9 @@ Imported conversations and messages will NOT be modified.`;
       }
     }
 
-    /* --- Anomaly Analysis panel ---------------------------------------- */
-    let anomalyPanelOpen = false;
+    /* --- Anomaly Analysis panel (always shown inside the anomaly card) --- */
     let anomalyPanelHTML = "";   // cached markup, re-injected after every re-render
     let rawReportOpen = false;   // <details> state survives destructive re-renders
-    let lastStatus = null;       // last /api/status payload (to re-render on toggle)
     const TREND_COLORS = ["#1f2a44", "#f04438", "#f79009", "#12b76a", "#7a5af8"];
     const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
     const fmtSignal = (s) =>
@@ -801,28 +792,16 @@ Imported conversations and messages will NOT be modified.`;
       injectAnomalyPanel();
     }
 
-    function toggleAnomalyPanel(open, scroll = false) {
-      anomalyPanelOpen = open;
-      // Re-render the cards so the anomaly card expands/collapses in place.
-      if (lastStatus) renderStageCards(lastStatus.pipeline, lastStatus.job);
-      if (open) {
-        injectAnomalyPanel(); // show cached content immediately…
-        loadAnomalyPanel();   // …then refresh it
-        if (scroll) {
-          const card = document.getElementById("anomaly-panel")?.closest(".stage-card");
-          if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }
-    }
-    document.getElementById("action-anomalies").addEventListener("click", () =>
-      toggleAnomalyPanel(true, true));
+    document.getElementById("action-anomalies").addEventListener("click", () => {
+      const card = document.getElementById("anomaly-panel")?.closest(".stage-card");
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
 
     let jobWasRunning = false;
     async function load() {
       try {
         const res = await fetch("/api/status");
         const data = await res.json();
-        lastStatus = data;
         renderServices(data.services, true);
         renderAI(data.ai);
         renderStageCards(data.pipeline, data.job);
@@ -830,7 +809,7 @@ Imported conversations and messages will NOT be modified.`;
         renderMetrics(data.metrics);
         await loadRuns();
         const running = Boolean(data.job && data.job.state === "running");
-        if (jobWasRunning && !running && anomalyPanelOpen) loadAnomalyPanel();
+        if (jobWasRunning && !running) loadAnomalyPanel();
         jobWasRunning = running;
         if (running) startPolling();
         else stopPolling();
@@ -842,6 +821,7 @@ Imported conversations and messages will NOT be modified.`;
       }
     }
     load();
+    loadAnomalyPanel();
   </script>
 </body>
 </html>

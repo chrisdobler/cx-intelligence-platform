@@ -160,6 +160,43 @@ def test_slack_fallback_when_llm_fails(
     assert result.anomalies == 2
 
 
+def test_anomalies_persist_before_alert_generation(
+    factory: Any, db_session: Session, tmp_path: Path
+) -> None:
+    """Alert prose must never block the canonical artifact (hang regression)."""
+    seed_spike_scenario(db_session)
+
+    class CountingProvider(FakeSlackProvider):
+        def __init__(self, session_factory: Any) -> None:
+            super().__init__()
+            self.factory = session_factory
+            self.counts_at_call: list[int] = []
+
+        def extract(self, prompt: str, schema: type[Any], on_retry: Any = None) -> SlackAlert:
+            with self.factory() as session:
+                self.counts_at_call.append(AnomalyRepository(session).count())
+            return super().extract(prompt, schema, on_retry)
+
+    provider = CountingProvider(factory)
+    make_service(factory, provider, tmp_path).run()
+    # Both anomalies were already persisted when the first alert was generated.
+    assert provider.counts_at_call and all(c == 2 for c in provider.counts_at_call)
+
+
+def test_progress_covers_alert_generation(
+    factory: Any, db_session: Session, tmp_path: Path
+) -> None:
+    """Progress must not sit at 100% while alerts are generated."""
+    from cxintel.pipeline.progress import ProgressSnapshot
+
+    seed_spike_scenario(db_session)
+    snapshots: list[Any] = []
+    make_service(factory, FakeSlackProvider(), tmp_path).run(progress=snapshots.append)
+    final = [s for s in snapshots if isinstance(s, ProgressSnapshot)][-1]
+    assert final.total_work == 3  # 1 comparable day + 2 anomalies
+    assert final.completed_work == 3
+
+
 def test_baseline_only_is_a_clean_stop(
     factory: Any, db_session: Session, tmp_path: Path
 ) -> None:
@@ -307,7 +344,7 @@ def test_cli_analyze_and_report(
     from cxintel.config import get_settings
 
     get_settings.cache_clear()
-    monkeypatch.setattr("cxintel.llm.get_llm_provider", lambda: FakeSlackProvider())
+    monkeypatch.setattr("cxintel.llm.get_llm_provider", lambda **kw: FakeSlackProvider())
 
     result = runner.invoke(cli_app, ["analyze"])
     assert result.exit_code == 0, result.output

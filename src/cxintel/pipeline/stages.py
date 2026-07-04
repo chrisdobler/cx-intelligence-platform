@@ -399,7 +399,10 @@ class AnomalyStage(PipelineStage):
         command.upgrade(Config("alembic.ini"), "head")
 
         reporter.report(message="Running anomaly detection…")
-        service = AnomalyService(session_factory, get_llm_provider(), pipeline_run_id=run_id)
+        # Alert prose has a deterministic fallback — use a small retry budget
+        # so exhausted quota degrades in seconds per alert, not minutes.
+        provider = get_llm_provider(max_transient_attempts=2, max_retry_sleep=8.0)
+        service = AnomalyService(session_factory, provider, pipeline_run_id=run_id)
         return service.run(progress=reporter).summary()
 
 

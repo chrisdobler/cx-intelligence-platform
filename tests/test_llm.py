@@ -167,6 +167,43 @@ def test_transient_exhaustion_is_retryable_failure() -> None:
     assert excinfo.value.attempts == 5
 
 
+def test_transient_budget_is_configurable_for_fast_fallback() -> None:
+    """Callers with a deterministic fallback (Prompt 3) use a small budget."""
+    from google.genai import errors
+
+    rate_limited = errors.APIError(429, {"error": {"message": "quota. Please retry in 0s."}})
+    client = FakeClient([rate_limited] * 5)
+    provider = GoogleProvider(
+        client=client,  # type: ignore[arg-type]
+        model="gemini-2.5-flash",
+        backoff_seconds=0.0,
+        max_transient_attempts=2,
+    )
+    with pytest.raises(RetryableLLMExtractionError):
+        provider.extract("p", Extraction)
+    assert len(client.models.calls) == 2
+
+
+def test_retry_sleep_cap_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A small sleep cap overrides huge server-suggested delays."""
+    from google.genai import errors
+
+    sleeps: list[float] = []
+    monkeypatch.setattr("cxintel.llm.time.sleep", lambda s: sleeps.append(s))
+    rate_limited = errors.APIError(
+        429, {"error": {"message": "quota. Please retry in 40.5s."}}
+    )
+    client = FakeClient([rate_limited, '{"name": "ok", "score": 0.1}'])
+    provider = GoogleProvider(
+        client=client,  # type: ignore[arg-type]
+        model="gemini-2.5-flash",
+        backoff_seconds=0.0,
+        max_retry_sleep=8.0,
+    )
+    assert provider.extract("p", Extraction).name == "ok"
+    assert sleeps == [8.0]
+
+
 def test_non_transient_api_error_is_permanent_without_retry() -> None:
     from google.genai import errors
 

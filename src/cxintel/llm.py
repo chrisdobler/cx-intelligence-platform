@@ -108,10 +108,10 @@ _RETRY_DELAY_PATTERN = re.compile(r"retry in ([0-9.]+)s", re.IGNORECASE)
 _MAX_RETRY_SLEEP = 65.0
 
 
-def _suggested_delay(error: Exception) -> float | None:
+def _suggested_delay(error: Exception, cap: float = _MAX_RETRY_SLEEP) -> float | None:
     """The server's 'Please retry in Xs' hint from a rate-limit error, if any."""
     match = _RETRY_DELAY_PATTERN.search(str(error))
-    return min(float(match.group(1)), _MAX_RETRY_SLEEP) if match else None
+    return min(float(match.group(1)), cap) if match else None
 
 
 def _is_transport_error(error: Exception) -> bool:
@@ -140,10 +140,21 @@ class GoogleProvider:
     budget.
     """
 
-    def __init__(self, client: Client, model: str, backoff_seconds: float = 2.0) -> None:
+    def __init__(
+        self,
+        client: Client,
+        model: str,
+        backoff_seconds: float = 2.0,
+        max_transient_attempts: int = _MAX_TRANSIENT_ATTEMPTS,
+        max_retry_sleep: float = _MAX_RETRY_SLEEP,
+    ) -> None:
         self._client = client
         self._model = model
         self._backoff_seconds = backoff_seconds
+        # Callers with a deterministic fallback (e.g. Prompt-3 Slack alerts)
+        # shrink these so a quota outage degrades in seconds, not minutes.
+        self._max_transient_attempts = max_transient_attempts
+        self._max_retry_sleep = max_retry_sleep
 
     def extract(
         self, prompt: str, schema: type[T], on_retry: RetryCallback | None = None
@@ -158,7 +169,8 @@ class GoogleProvider:
         last_error: Exception | None = None
         validation_failures = 0
         transient_failures = 0
-        while validation_failures < _MAX_ATTEMPTS and transient_failures < _MAX_TRANSIENT_ATTEMPTS:
+        max_transient = self._max_transient_attempts
+        while validation_failures < _MAX_ATTEMPTS and transient_failures < max_transient:
             try:
                 response = self._client.models.generate_content(
                     model=self._model, contents=prompt, config=config
@@ -178,10 +190,10 @@ class GoogleProvider:
                     ) from exc
                 last_error = exc
                 transient_failures += 1
-                if transient_failures < _MAX_TRANSIENT_ATTEMPTS:
+                if transient_failures < max_transient:
                     if on_retry is not None:
                         on_retry(transient_failures + 1, exc)
-                    delay = _suggested_delay(exc)
+                    delay = _suggested_delay(exc, cap=self._max_retry_sleep)
                     if delay is None:
                         delay = self._backoff_seconds * (2 ** (transient_failures - 1))
                     time.sleep(delay)
@@ -190,12 +202,12 @@ class GoogleProvider:
                     raise
                 last_error = exc
                 transient_failures += 1
-                if transient_failures < _MAX_TRANSIENT_ATTEMPTS:
+                if transient_failures < max_transient:
                     if on_retry is not None:
                         on_retry(transient_failures + 1, exc)
                     time.sleep(self._backoff_seconds * (2 ** (transient_failures - 1)))
         attempts = validation_failures + transient_failures
-        if transient_failures >= _MAX_TRANSIENT_ATTEMPTS:
+        if transient_failures >= max_transient:
             category = (
                 LLMFailureCategory.TRANSPORT
                 if last_error is not None and _is_transport_error(last_error)
@@ -326,8 +338,16 @@ def get_embedding_provider() -> EmbeddingProvider:
     )
 
 
-def get_llm_provider() -> LLMProvider:
-    """The configured provider (test seam — monkeypatch this in tests)."""
+def get_llm_provider(
+    *,
+    max_transient_attempts: int = _MAX_TRANSIENT_ATTEMPTS,
+    max_retry_sleep: float = _MAX_RETRY_SLEEP,
+) -> LLMProvider:
+    """The configured provider (test seam — monkeypatch this in tests).
+
+    Callers whose output has a deterministic fallback can pass a small retry
+    budget so quota outages degrade in seconds rather than minutes.
+    """
     from .config import get_settings
 
     settings = get_settings()
@@ -344,5 +364,8 @@ def get_llm_provider() -> LLMProvider:
     from google import genai
 
     return GoogleProvider(
-        client=genai.Client(api_key=settings.google_api_key), model=settings.llm_model
+        client=genai.Client(api_key=settings.google_api_key),
+        model=settings.llm_model,
+        max_transient_attempts=max_transient_attempts,
+        max_retry_sleep=max_retry_sleep,
     )
