@@ -13,6 +13,7 @@ and written out as the anomaly report.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,13 +22,15 @@ import httpx
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..llm import LLMExtractionError, LLMProvider
-from ..models import Anomaly
+from ..models import Anomaly, AnomalyStageObservation
 from ..pipeline.progress import ProgressCallback, ProgressReporter
 from ..repositories import (
     AnomalyRepository,
+    AnomalyStageObservationRepository,
     ConversationIssueRepository,
     ConversationRepository,
     IssueCatalogRepository,
+    IssueDayStats,
 )
 from .detector import DetectionThresholds, detect
 from .prompt import build_slack_prompt, fallback_slack_message
@@ -53,6 +56,10 @@ class AnomalyResult:
         self.baseline_only = False
         self.report_path: Path | None = None
         self.webhook_configured = False
+        self.observed_steps = 0
+        self.observed_seconds = 0.0
+        self.slowest_step: str | None = None
+        self.slowest_seconds = 0.0
 
     def summary(self) -> str:
         if self.baseline_only:
@@ -66,9 +73,26 @@ class AnomalyResult:
                 parts.append("Slack: delivery skipped (SLACK_WEBHOOK_URL unset).")
             if self.alert_fallbacks:
                 parts.append(f"{self.alert_fallbacks} alert(s) used the fallback template.")
+        if self.observed_steps:
+            parts.append(
+                f"Timing: {self.observed_seconds:.2f}s observed across "
+                f"{self.observed_steps} steps"
+                + (
+                    f", slowest {self.slowest_step} {self.slowest_seconds:.2f}s."
+                    if self.slowest_step
+                    else "."
+                )
+            )
         if self.report_path is not None:
             parts.append(f"Report: {self.report_path}")
         return " ".join(parts)
+
+    def observe(self, step: str, total_seconds: float) -> None:
+        self.observed_steps += 1
+        self.observed_seconds += total_seconds
+        if total_seconds >= self.slowest_seconds:
+            self.slowest_seconds = total_seconds
+            self.slowest_step = step
 
 
 class AnomalyService:
@@ -111,23 +135,55 @@ class AnomalyService:
         result = AnomalyResult()
         result.webhook_configured = bool(self._webhook_url)
 
+        load_started_at = datetime.now(tz=UTC)
+        load_started = time.perf_counter()
+        load_error: str | None = None
+        days: list[int] = []
+        baseline: list[IssueDayStats] = []
+        baseline_day: int | None = None
+        baseline_date: datetime | None = None
+        later_days: list[int] = []
+        per_day_stats: dict[int, list[IssueDayStats]] = {}
+        observation_dates: dict[int, datetime | None] = {}
+        catalog_names: set[str] = set()
         with self._session_factory() as session:
-            conversations = ConversationRepository(session)
-            days = conversations.days()
-            issues = ConversationIssueRepository(session)
-            catalog_names = {e.canonical_name for e in IssueCatalogRepository(session).all()}
-            baseline_day = days[0] if days else None
-            baseline = issues.day_issue_stats(baseline_day) if baseline_day is not None else []
-            baseline_date = (
-                conversations.earliest_started_at_for_day(baseline_day)
-                if baseline_day is not None
-                else None
-            )
-            later_days = [d for d in days if baseline_day is not None and d > baseline_day]
-            per_day_stats = {day: issues.day_issue_stats(day) for day in later_days}
-            observation_dates = {
-                day: conversations.earliest_started_at_for_day(day) for day in later_days
-            }
+            try:
+                conversations = ConversationRepository(session)
+                days = conversations.days()
+                issues = ConversationIssueRepository(session)
+                catalog_names = {e.canonical_name for e in IssueCatalogRepository(session).all()}
+                baseline_day = days[0] if days else None
+                baseline = issues.day_issue_stats(baseline_day) if baseline_day is not None else []
+                baseline_date = (
+                    conversations.earliest_started_at_for_day(baseline_day)
+                    if baseline_day is not None
+                    else None
+                )
+                later_days = [d for d in days if baseline_day is not None and d > baseline_day]
+                per_day_stats = {day: issues.day_issue_stats(day) for day in later_days}
+                observation_dates = {
+                    day: conversations.earliest_started_at_for_day(day) for day in later_days
+                }
+            except Exception as exc:
+                load_error = str(exc)
+                raise
+            finally:
+                self._record_observation(
+                    step="load_snapshot",
+                    result=result,
+                    started_at=load_started_at,
+                    started=load_started,
+                    status="failed" if load_error else "succeeded",
+                    baseline_issue_count=len(baseline),
+                    current_issue_count=sum(len(stats) for stats in per_day_stats.values()),
+                    details={
+                        "days": days,
+                        "baseline_day": baseline_day,
+                        "later_days": later_days,
+                        "catalog_entries": len(catalog_names),
+                    },
+                    error=load_error,
+                )
 
         comparable_days = [d for d in later_days if per_day_stats[d]]
         if not comparable_days:
@@ -142,15 +198,43 @@ class AnomalyService:
 
         anomalies: list[CanonicalAnomaly] = []
         for day in comparable_days:
-            detected = detect(
-                baseline,
-                per_day_stats[day],
-                day=day,
-                observation_date=observation_dates.get(day),
-                baseline_date=baseline_date,
-                catalog_names=catalog_names,
-                thresholds=self._thresholds,
-            )
+            detect_started_at = datetime.now(tz=UTC)
+            detect_started = time.perf_counter()
+            detect_error: str | None = None
+            detected: list[CanonicalAnomaly] = []
+            observation_date = observation_dates.get(day)
+            try:
+                detected = detect(
+                    baseline,
+                    per_day_stats[day],
+                    day=day,
+                    observation_date=observation_date,
+                    baseline_date=baseline_date,
+                    catalog_names=catalog_names,
+                    thresholds=self._thresholds,
+                )
+            except Exception as exc:
+                detect_error = str(exc)
+                raise
+            finally:
+                self._record_observation(
+                    step="detect_day",
+                    result=result,
+                    started_at=detect_started_at,
+                    started=detect_started,
+                    status="failed" if detect_error else "succeeded",
+                    day=day,
+                    baseline_issue_count=len(baseline),
+                    current_issue_count=len(per_day_stats[day]),
+                    anomalies_detected=len(detected),
+                    details={
+                        "observation_date": observation_date.isoformat()
+                        if observation_date
+                        else None,
+                        "baseline_date": baseline_date.isoformat() if baseline_date else None,
+                    },
+                    error=detect_error,
+                )
             anomalies.extend(detected)
             reporter.advance(
                 current_item=f"day {day}",
@@ -163,19 +247,83 @@ class AnomalyService:
             total_work=len(comparable_days) + len(anomalies),
             message=f"{len(anomalies)} anomalies detected — persisting…",
         )
-        rows = self._persist(anomalies, [fallback_slack_message(a) for a in anomalies])
+        persist_started_at = datetime.now(tz=UTC)
+        persist_started = time.perf_counter()
+        persist_error: str | None = None
+        rows: list[Anomaly] = []
+        try:
+            rows = self._persist(anomalies, [fallback_slack_message(a) for a in anomalies])
+        except Exception as exc:
+            persist_error = str(exc)
+            raise
+        finally:
+            self._record_observation(
+                step="persist_anomalies",
+                result=result,
+                started_at=persist_started_at,
+                started=persist_started,
+                status="failed" if persist_error else "succeeded",
+                baseline_issue_count=len(baseline),
+                current_issue_count=sum(len(stats) for stats in per_day_stats.values()),
+                anomalies_detected=len(rows),
+                details={"candidate_anomalies": len(anomalies)},
+                error=persist_error,
+            )
 
         for anomaly, row in zip(anomalies, rows, strict=True):
-            text = self._slack_alert(anomaly, result, reporter)
-            if text != row.slack_message:
-                self._update_alert(row.id, text)
-                row.slack_message = text
-            self._deliver_one(text, result)
+            alert_started_at = datetime.now(tz=UTC)
+            alert_started = time.perf_counter()
+            alert_error: str | None = None
+            fallback_count_before = result.alert_fallbacks
+            delivered = False
+            try:
+                text = self._slack_alert(anomaly, result, reporter)
+                if text != row.slack_message:
+                    self._update_alert(row.id, text)
+                    row.slack_message = text
+                delivered = self._deliver_one(text, result)
+            except Exception as exc:
+                alert_error = str(exc)
+                raise
+            finally:
+                self._record_observation(
+                    step="alert",
+                    result=result,
+                    started_at=alert_started_at,
+                    started=alert_started,
+                    status="failed" if alert_error else "succeeded",
+                    day=anomaly.day,
+                    issue=anomaly.issue,
+                    anomalies_detected=1,
+                    alert_count=1,
+                    fallback_count=result.alert_fallbacks - fallback_count_before,
+                    delivered_count=1 if delivered else 0,
+                    details={"webhook_configured": result.webhook_configured},
+                    error=alert_error,
+                )
             reporter.advance(
                 current_item=anomaly.issue,
                 message=f"Alert ready for '{anomaly.issue}'.",
             )
-        result.report_path = self._write_report(rows)
+        report_started_at = datetime.now(tz=UTC)
+        report_started = time.perf_counter()
+        report_error: str | None = None
+        try:
+            result.report_path = self._write_report(rows)
+        except Exception as exc:
+            report_error = str(exc)
+            raise
+        finally:
+            self._record_observation(
+                step="report_write",
+                result=result,
+                started_at=report_started_at,
+                started=report_started,
+                status="failed" if report_error else "succeeded",
+                anomalies_detected=len(rows),
+                details={"report_path": str(result.report_path) if result.report_path else None},
+                error=report_error,
+            )
 
         result.anomalies = len(anomalies)
         for anomaly in anomalies:
@@ -197,21 +345,71 @@ class AnomalyService:
             reporter.report(message=f"Alert for '{anomaly.issue}' used the fallback template.")
             return fallback_slack_message(anomaly)
 
-    def _deliver_one(self, text: str, result: AnomalyResult) -> None:
+    def _deliver_one(self, text: str, result: AnomalyResult) -> bool:
         if not self._webhook_url:
-            return
+            return False
         try:
             response = httpx.post(
                 self._webhook_url, json={"text": text}, timeout=_WEBHOOK_TIMEOUT_SECONDS
             )
             if response.status_code < 300:
                 result.alerts_delivered += 1
+                return True
             else:
                 logger.warning("slack webhook returned %s", response.status_code)
         except Exception as exc:  # delivery is best-effort, never fatal
             logger.warning("slack webhook delivery failed: %s", exc)
+        return False
 
     # -- persistence + report --------------------------------------------------
+
+    def _record_observation(
+        self,
+        *,
+        step: str,
+        result: AnomalyResult,
+        started_at: datetime,
+        started: float,
+        status: str,
+        day: int | None = None,
+        issue: str | None = None,
+        baseline_issue_count: int = 0,
+        current_issue_count: int = 0,
+        anomalies_detected: int = 0,
+        alert_count: int = 0,
+        fallback_count: int = 0,
+        delivered_count: int = 0,
+        details: dict[str, object] | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Persist observation data without making instrumentation a hard dependency."""
+        total_seconds = time.perf_counter() - started
+        result.observe(step, total_seconds)
+        observation = AnomalyStageObservation(
+            id=uuid.uuid4(),
+            pipeline_run_id=self._pipeline_run_id,
+            step=step,
+            day=day,
+            issue=issue,
+            status=status,
+            total_seconds=total_seconds,
+            baseline_issue_count=baseline_issue_count,
+            current_issue_count=current_issue_count,
+            anomalies_detected=anomalies_detected,
+            alert_count=alert_count,
+            fallback_count=fallback_count,
+            delivered_count=delivered_count,
+            details=details or {},
+            started_at=started_at,
+            finished_at=datetime.now(tz=UTC),
+            error=error,
+        )
+        try:
+            with self._session_factory() as session:
+                AnomalyStageObservationRepository(session).add(observation)
+                session.commit()
+        except Exception as exc:
+            logger.warning("failed to record anomaly observation for %s: %s", step, exc)
 
     def _persist(self, anomalies: list[CanonicalAnomaly], alerts: list[str]) -> list[Anomaly]:
         now = datetime.now(tz=UTC)

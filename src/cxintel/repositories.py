@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from .models import (
     Anomaly,
+    AnomalyStageObservation,
     Conversation,
     ConversationAnalysis,
     ConversationIssue,
@@ -88,6 +89,19 @@ class ConversationRepository:
             ).scalars()
         )
 
+    def day_starts(self) -> dict[int, datetime]:
+        """First conversation start per dataset day (timeline day markers)."""
+        rows = (
+            self._session.execute(
+                select(Conversation.day, func.min(Conversation.started_at))
+                .group_by(Conversation.day)
+                .order_by(Conversation.day)
+            )
+            .tuples()
+            .all()
+        )
+        return dict(rows)
+
     def earliest_started_at_for_day(self, day: int) -> datetime | None:
         """Earliest conversation start in a dataset day bucket."""
         return self._session.execute(
@@ -121,9 +135,7 @@ class ConversationRepository:
             stmt = stmt.limit(limit)
         return list(self._session.execute(stmt).scalars())
 
-    def terminal_failure_ids_for_day(
-        self, day: int, limit: int | None = None
-    ) -> list[uuid.UUID]:
+    def terminal_failure_ids_for_day(self, day: int, limit: int | None = None) -> list[uuid.UUID]:
         """Terminal-failed conversations that can be retried explicitly."""
         stmt = (
             select(Conversation.id)
@@ -357,6 +369,33 @@ class ConversationIssueRepository:
         ).scalars()
         return list(rows)
 
+    def issue_timeline(
+        self, issue: str, *, bucket_seconds: int = 3600
+    ) -> list[tuple[datetime, int]]:
+        """Occurrence counts for one issue, bucketed by conversation start time.
+
+        Buckets are epoch-aligned floors of ``Conversation.started_at`` so the
+        bucket size stays configurable (V1 renders hourly). Presentation data
+        only — anomaly detection never reads this.
+        """
+        bucket = func.to_timestamp(
+            func.floor(func.extract("epoch", Conversation.started_at) / bucket_seconds)
+            * bucket_seconds
+        )
+        rows = (
+            self._session.execute(
+                select(bucket, func.count())
+                .select_from(ConversationIssue)
+                .join(Conversation, Conversation.id == ConversationIssue.conversation_id)
+                .where(ConversationIssue.canonical_name == issue)
+                .group_by(bucket)
+                .order_by(bucket)
+            )
+            .tuples()
+            .all()
+        )
+        return [(start, count) for start, count in rows]
+
     def day_issue_stats(self, day: int) -> list[IssueDayStats]:
         """Per-canonical-name operational statistics for one day (anomaly inputs).
 
@@ -411,9 +450,7 @@ class ConversationIssueRepository:
             .tuples()
             .all()
         )
-        return [
-            IssueAggregate(name, count, list(examples)) for name, count, examples in rows
-        ]
+        return [IssueAggregate(name, count, list(examples)) for name, count, examples in rows]
 
 
 class IssueCatalogRepository:
@@ -513,6 +550,53 @@ class LLMCallObservationRepository:
         return list(
             self._session.execute(
                 stmt.order_by(sort_column.desc(), LLMCallObservation.started_at.desc()).limit(limit)
+            ).scalars()
+        )
+
+
+ANOMALY_OBSERVATION_SORT_FIELDS = {
+    "total_seconds": AnomalyStageObservation.total_seconds,
+    "started_at": AnomalyStageObservation.started_at,
+    "anomalies_detected": AnomalyStageObservation.anomalies_detected,
+    "alert_count": AnomalyStageObservation.alert_count,
+    "fallback_count": AnomalyStageObservation.fallback_count,
+    "delivered_count": AnomalyStageObservation.delivered_count,
+}
+
+
+class AnomalyStageObservationRepository:
+    """Persistence and slow-step queries for anomaly detection observations."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, observation: AnomalyStageObservation) -> None:
+        self._session.add(observation)
+
+    def count(self) -> int:
+        return self._session.execute(
+            select(func.count()).select_from(AnomalyStageObservation)
+        ).scalar_one()
+
+    def slowest(
+        self,
+        *,
+        limit: int = 20,
+        sort: str = "total_seconds",
+        pipeline_run_id: uuid.UUID | None = None,
+    ) -> list[AnomalyStageObservation]:
+        """Return recent/slow observations sorted by an allowed diagnostic field."""
+        sort_column = ANOMALY_OBSERVATION_SORT_FIELDS.get(sort)
+        if sort_column is None:
+            raise ValueError(f"Unsupported anomaly observation sort '{sort}'.")
+        stmt = select(AnomalyStageObservation)
+        if pipeline_run_id is not None:
+            stmt = stmt.where(AnomalyStageObservation.pipeline_run_id == pipeline_run_id)
+        return list(
+            self._session.execute(
+                stmt.order_by(sort_column.desc(), AnomalyStageObservation.started_at.desc()).limit(
+                    limit
+                )
             ).scalars()
         )
 

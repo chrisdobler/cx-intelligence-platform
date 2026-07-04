@@ -81,6 +81,7 @@ class Settings(BaseSettings):
 
     # --- Pipeline knobs ---------------------------------------------------
     raw_data_path: str = Field(default="data/raw/sample_tickets_v6.json")
+    derived_data_path: str = Field(default="data/processed/data-artifacts.tgz")
     understand_limit: int | None = Field(
         default=None, description="Cap conversations processed by `understand` (None = all)."
     )

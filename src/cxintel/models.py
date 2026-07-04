@@ -190,6 +190,37 @@ class LLMCallObservation(Base):
     error: Mapped[str | None] = mapped_column(Text)
 
 
+class AnomalyStageObservation(Base):
+    """Per-step anomaly detection timing observation for bottleneck analysis."""
+
+    __tablename__ = "anomaly_stage_observations"
+    __table_args__ = (
+        Index("ix_anomaly_stage_observations_pipeline_run_id", "pipeline_run_id"),
+        Index("ix_anomaly_stage_observations_step", "step"),
+        Index("ix_anomaly_stage_observations_day", "day"),
+        Index("ix_anomaly_stage_observations_total_seconds", "total_seconds"),
+        Index("ix_anomaly_stage_observations_started_at", "started_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("pipeline_runs.id"))
+    step: Mapped[str] = mapped_column(String)
+    day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    issue: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String)
+    total_seconds: Mapped[float] = mapped_column(Float)
+    baseline_issue_count: Mapped[int] = mapped_column(Integer)
+    current_issue_count: Mapped[int] = mapped_column(Integer)
+    anomalies_detected: Mapped[int] = mapped_column(Integer)
+    alert_count: Mapped[int] = mapped_column(Integer)
+    fallback_count: Mapped[int] = mapped_column(Integer)
+    delivered_count: Mapped[int] = mapped_column(Integer)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+
+
 class ConversationUnderstandingFailure(Base):
     """Durable terminal failure for Conversation Understanding resume logic."""
 

@@ -33,8 +33,13 @@ htmlcov/
 # Data — large raw dataset and derived artifacts (keep the dir via .gitkeep)
 data/raw/*
 data/processed/*
+data/backups/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/processed/derived-ai-dataset.zip
+
+# Local backup bundles.
+backups/
 
 # Local, uncommitted make overrides (e.g. DOCKER_CONTEXT := desktop-linux)
 Makefile.local

@@ -286,8 +286,12 @@ respecting the complexity budget):
   Runs panel, `GET /api/pipeline/runs`, and `app runs`. Phase 3 understanding
   now records per-conversation `llm_call_observations` for load, prompt, LLM,
   persistence, retry, and size bottleneck analysis, surfaced via
-  `GET /api/pipeline/llm-observations` and `app bottlenecks`; token usage
-  remains part of the broader Phase 7 observability work.
+  `GET /api/pipeline/llm-observations` and `app bottlenecks`. Phase 4 anomaly
+  detection records per-step `anomaly_stage_observations` for projection
+  loading, day-level detection, persistence, alert generation, delivery, and
+  report-writing timings, surfaced via
+  `GET /api/pipeline/anomaly-observations` and `app anomaly-observations`;
+  token usage remains part of the broader Phase 7 observability work.
 
 ### Onboarding / AI setup
 

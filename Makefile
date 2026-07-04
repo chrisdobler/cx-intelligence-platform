@@ -5,6 +5,7 @@
 SHELL := /bin/bash
 
 UV ?= uv
+DATA_ARTIFACTS_BUNDLE ?= data/processed/data-artifacts.tgz
 
 # Docker context to target. Empty (the committed default) uses whatever context
 # is currently active — portable, works on any machine with a working Docker.
@@ -19,7 +20,7 @@ DOCKER_CONTEXT ?=
 DOCKER := docker $(if $(strip $(DOCKER_CONTEXT)),--context $(strip $(DOCKER_CONTEXT)))
 COMPOSE := $(DOCKER) compose
 
-.PHONY: help start stop install lock up down db-reset db-health db-migrate fmt lint lint-fix typecheck test check serve clean ingest stats understand analyze build-kb chat pipeline .ensure-api-port-available
+.PHONY: help start stop install lock up down db-reset db-health db-migrate fmt lint lint-fix typecheck test check serve clean data-artifacts backup-artifacts ingest stats understand analyze build-kb chat pipeline .ensure-api-port-available
 
 help:  ## Show this help.
 	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort \
@@ -121,6 +122,39 @@ serve:  ## Run the FastAPI service.
 clean:  ## Remove caches and build artifacts.
 	rm -rf .pytest_cache .ruff_cache .mypy_cache dist build .coverage htmlcov
 	find . -type d -name __pycache__ -not -path './.venv/*' -exec rm -rf {} +
+
+data-artifacts: up  ## Refresh data/processed/data-artifacts.tgz with derived AI artifacts only.
+	@set -euo pipefail; \
+	out="$(DATA_ARTIFACTS_BUNDLE)"; \
+	staging="$$(mktemp -d /tmp/cxintel-data-artifacts.XXXXXX)"; \
+	cleanup() { rm -rf "$$staging"; }; \
+	trap cleanup EXIT; \
+	mkdir -p "$$(dirname "$$out")"; \
+	$(UV) run app export-derived "$$staging/derived-ai-dataset.zip"; \
+	( \
+		cd "$$staging"; \
+		shasum -a 256 derived-ai-dataset.zip > SHA256SUMS; \
+		{ \
+			echo "Derived data artifact bundle: $$out"; \
+			echo "Contents include derived-ai-dataset.zip and SHA256SUMS."; \
+			echo "Import derived AI data from repo root: app import-derived $$out"; \
+			echo "Inspect: tar -tzf $$out | head"; \
+			echo "Extract: mkdir -p /tmp/cxintel-artifacts && tar -xzf $$out -C /tmp/cxintel-artifacts"; \
+		} > RESTORE.md; \
+	); \
+	tar -czf "$$out" -C "$$staging" .; \
+	shasum -a 256 "$$out" > "$$out.sha256"; \
+	{ \
+		echo "Derived data artifact bundle: $$out"; \
+		echo "Checksum: $$out.sha256"; \
+		echo "Import derived AI data: app import-derived $$out"; \
+		echo "Inspect: tar -tzf $$out | head"; \
+		echo "Extract: mkdir -p /tmp/cxintel-artifacts && tar -xzf $$out -C /tmp/cxintel-artifacts"; \
+	} > "$$(dirname "$$out")/data-artifacts.RESTORE.md"; \
+	tar -tzf "$$out" >/dev/null; \
+	echo "Created and verified $$out"
+
+backup-artifacts: data-artifacts
 
 ingest:  ## [Phase 2] Load and normalise the raw dataset.
 	$(UV) run app ingest

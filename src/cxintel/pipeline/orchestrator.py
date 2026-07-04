@@ -247,6 +247,28 @@ class LLMObservationRecord(BaseModel):
     error: str | None
 
 
+class AnomalyObservationRecord(BaseModel):
+    """One anomaly-detection stage timing observation."""
+
+    id: uuid.UUID
+    pipeline_run_id: uuid.UUID | None
+    step: str
+    day: int | None
+    issue: str | None
+    status: str
+    total_seconds: float
+    baseline_issue_count: int
+    current_issue_count: int
+    anomalies_detected: int
+    alert_count: int
+    fallback_count: int
+    delivered_count: int
+    details: dict[str, object]
+    started_at: datetime
+    finished_at: datetime
+    error: str | None
+
+
 def recent_runs(limit: int = 20) -> list[RunRecord]:
     """The most recent pipeline runs, newest first ([] when the DB is down).
 
@@ -266,8 +288,11 @@ def recent_runs(limit: int = 20) -> list[RunRecord]:
         session.close()
 
     def label(key: str) -> str:
+        from .import_derived import IMPORT_DERIVED_STAGE_KEY, IMPORT_DERIVED_STAGE_LABEL
         from .reset import RESET_DERIVED_STAGE_KEY
 
+        if key == IMPORT_DERIVED_STAGE_KEY:
+            return IMPORT_DERIVED_STAGE_LABEL
         if key == RESET_DERIVED_STAGE_KEY:
             return "Reset Derived Data"
         try:
@@ -342,6 +367,57 @@ def llm_observations(
             prompt_characters=obs.prompt_characters,
             issue_count=obs.issue_count,
             retry_count=obs.retry_count,
+            started_at=obs.started_at,
+            finished_at=obs.finished_at,
+            error=obs.error,
+        )
+        for obs in observations
+    ]
+
+
+def anomaly_observations(
+    *,
+    limit: int = 20,
+    sort: str = "total_seconds",
+    pipeline_run_id: uuid.UUID | None = None,
+) -> list[AnomalyObservationRecord]:
+    """Slowest anomaly-detection observations ([] when the DB is unavailable)."""
+    from ..repositories import (
+        ANOMALY_OBSERVATION_SORT_FIELDS,
+        AnomalyStageObservationRepository,
+    )
+
+    if sort not in ANOMALY_OBSERVATION_SORT_FIELDS:
+        raise ValueError(f"Unsupported anomaly observation sort '{sort}'.")
+
+    session = _open_session()
+    if session is None:
+        return []
+    try:
+        observations = AnomalyStageObservationRepository(session).slowest(
+            limit=limit, sort=sort, pipeline_run_id=pipeline_run_id
+        )
+    except Exception:
+        return []
+    finally:
+        session.close()
+
+    return [
+        AnomalyObservationRecord(
+            id=obs.id,
+            pipeline_run_id=obs.pipeline_run_id,
+            step=obs.step,
+            day=obs.day,
+            issue=obs.issue,
+            status=obs.status,
+            total_seconds=obs.total_seconds,
+            baseline_issue_count=obs.baseline_issue_count,
+            current_issue_count=obs.current_issue_count,
+            anomalies_detected=obs.anomalies_detected,
+            alert_count=obs.alert_count,
+            fallback_count=obs.fallback_count,
+            delivered_count=obs.delivered_count,
+            details=obs.details,
             started_at=obs.started_at,
             finished_at=obs.finished_at,
             error=obs.error,

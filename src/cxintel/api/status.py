@@ -14,6 +14,7 @@ needs to change.
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -97,11 +98,20 @@ class AIStatus(BaseModel):
     setup_url: str
 
 
+class DerivedImportStatus(BaseModel):
+    """Availability of the local pre-generated AI dataset snapshot."""
+
+    path: str
+    exists: bool
+    message: str
+
+
 class PlatformStatus(BaseModel):
     """Everything the landing page needs in one typed payload."""
 
     services: list[ServiceStatus] = Field(default_factory=list)
     ai: AIStatus
+    derived_import: DerivedImportStatus
     pipeline: list[PipelineStage] = Field(default_factory=list)
     metrics: Metrics = Field(default_factory=Metrics)
     job: Job | None = None
@@ -212,10 +222,22 @@ def build_status() -> PlatformStatus:
         ],
         setup_url=AI_SETUP_URL,
     )
+    derived_path = settings.derived_data_path
+    derived_exists = Path(derived_path).exists()
+    derived_import = DerivedImportStatus(
+        path=derived_path,
+        exists=derived_exists,
+        message=(
+            f"Pre-generated AI dataset available at {derived_path}."
+            if derived_exists
+            else f"No pre-generated AI dataset found at {derived_path}."
+        ),
+    )
 
     return PlatformStatus(
         services=[postgres, pgvector, api],
         ai=ai,
+        derived_import=derived_import,
         pipeline=_pipeline_stages(),
         metrics=_ingest_metrics(),
         job=TRACKER.current(),

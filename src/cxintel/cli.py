@@ -9,6 +9,7 @@ Assistant (Phase 6). Installed as the ``app`` console script.
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer
@@ -196,6 +197,36 @@ def build_kb() -> None:
         summary = run_stage("knowledge_base", progress=typer.echo, trigger="cli")
     except Exception as exc:
         typer.secho(f"knowledge base build failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+    typer.secho(summary, fg=typer.colors.GREEN)
+
+
+@app.command("import-derived")
+def import_derived(
+    path: Annotated[Path, typer.Argument(help="Path to the derived dataset zip.")],
+) -> None:
+    """Import a pre-generated AI-derived dataset snapshot."""
+    from .pipeline.import_derived import import_derived_data
+
+    try:
+        summary = import_derived_data(path, progress=typer.echo, trigger="cli")
+    except Exception as exc:
+        typer.secho(f"derived dataset import failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+    typer.secho(summary, fg=typer.colors.GREEN)
+
+
+@app.command("export-derived")
+def export_derived(
+    path: Annotated[Path, typer.Argument(help="Path for the derived dataset zip.")],
+) -> None:
+    """Export current AI-derived artifacts as an importable snapshot."""
+    from .pipeline.import_derived import export_derived_data
+
+    try:
+        summary = export_derived_data(path)
+    except Exception as exc:
+        typer.secho(f"derived dataset export failed: {exc}", fg=typer.colors.RED)
         raise typer.Exit(code=1) from exc
     typer.secho(summary, fg=typer.colors.GREEN)
 
@@ -425,6 +456,59 @@ def bottlenecks(
             f"{record.load_seconds:>6.2f}s {record.prompt_seconds:>6.2f}s "
             f"{record.persist_seconds:>6.2f}s {record.retry_count:>5} "
             f"{record.message_count:>4} {record.prompt_characters:>6}{error}"
+        )
+
+
+@app.command()
+def anomaly_observations(
+    limit: int = typer.Option(20, help="Maximum number of observations to show."),
+    sort: str = typer.Option(
+        "total_seconds",
+        help=(
+            "Sort by total_seconds, started_at, anomalies_detected, alert_count, "
+            "fallback_count, or delivered_count."
+        ),
+    ),
+    pipeline_run_id: Annotated[
+        uuid.UUID | None, typer.Option(help="Restrict observations to one pipeline run id.")
+    ] = None,
+) -> None:
+    """Show slow anomaly-detection stage observations."""
+    from .db import check_health
+    from .pipeline.orchestrator import anomaly_observations as fetch_observations
+
+    health = check_health()
+    if not health.connected:
+        typer.secho(
+            f"anomaly observations unavailable: database unreachable ({health.error})",
+            fg="red",
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        records = fetch_observations(limit=limit, sort=sort, pipeline_run_id=pipeline_run_id)
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    if not records:
+        typer.secho("No anomaly observations recorded yet.", fg=typer.colors.YELLOW)
+        return
+
+    typer.echo(
+        "step                  status       total day issue                 "
+        "base current anom alert fallback delivered"
+    )
+    for record in records:
+        day = str(record.day) if record.day is not None else "-"
+        issue = (record.issue or "-")[:20]
+        error = f"  error={record.error[:80]}" if record.error else ""
+        typer.echo(
+            f"{record.step:<21} {record.status:<9} {record.total_seconds:>6.2f}s "
+            f"{day:>3} {issue:<20} {record.baseline_issue_count:>4} "
+            f"{record.current_issue_count:>7} {record.anomalies_detected:>4} "
+            f"{record.alert_count:>5} {record.fallback_count:>8} "
+            f"{record.delivered_count:>9}{error}"
         )
 
 
