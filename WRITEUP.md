@@ -2,6 +2,8 @@
 
 # Conversation Intelligence Platform
 
+> **Note:** This document intentionally summarizes the implementation. Supporting architectural rationale, detailed ADRs, prompt specifications, and pipeline documentation are available in the accompanying project documentation.
+
 > This document will become the final submission write-up. Keep it under two pages of text. Populate sections as implementation progresses.
 
 ## 1. Problem
@@ -11,6 +13,10 @@
 ## 2. Overall Architecture
 - Final architecture diagram (reference ARCHITECTURE.md)
 - Brief pipeline overview
+
+**Figure 1 — High-Level Architecture**
+
+![Figure 1 — Overall Architecture](docs/diagrams/figure-1-overall-architecture.svg)
 
 ### Architectural Philosophy
 
@@ -33,6 +39,10 @@ This approach improves reproducibility, simplifies testing, enables
 deterministic regression evaluation, and keeps AI isolated to the parts of the
 system that genuinely require semantic understanding.
 
+
+**Figure 2 — Issue Extraction Growth During Development**
+
+![Figure 2 — Issue Extraction Growth](docs/diagrams/figure-2-issue-extraction-growth.svg)
 
 ### Validation During Development
 
@@ -117,6 +127,10 @@ conversations.
 - Context engineering
 - Resolution generation
 
+**Figure 3 — Resolution Assistant Pipeline**
+
+![Figure 3 — Resolution Assistant Pipeline](docs/diagrams/figure-3-resolution-assistant-pipeline.svg)
+
 ### Grounded Recommendations
 
 The Resolution Assistant is intentionally grounded in retrieved historical
@@ -152,11 +166,36 @@ reinterprets conversations (a new free-text ticket is structured once by the
 existing Prompt #1 and is not persisted).
 
 ## 5. Key Engineering Decisions
-- Reference DESIGN_DECISIONS.md
-- Summarize only the most important decisions.
+Rather than reproducing every architectural decision, this write-up highlights the most consequential design choices. The complete Architectural Decision Record (ADR) log is available in `docs/ARCHITECTURE_DECISIONS.md`.
 
-## 6. Future Improvements
+Key decisions include:
+
+- Canonical Structured Conversation Object as the single AI artifact.
+- Deterministic relational projections for analytics.
+- Multi-signal deterministic anomaly detection.
+- Deterministic knowledge synthesis instead of a second LLM pass.
+- Grounding enforced in code rather than relying on prompt behavior.
+- PostgreSQL + pgvector as a unified operational and vector datastore.
+- Deterministic golden-dataset evaluation instead of LLM-as-a-judge.
+
+## 6. Evaluation & Observability (Phase 7)
+
+Because every AI stage emits a strongly typed canonical artifact, AI behavior
+is evaluated deterministically (ADR-015): `app evaluate` runs a
+version-controlled golden dataset (`evals/golden/`) through the production
+Understanding, Retrieval, and Resolution code paths and compares the
+resulting artifacts field by field — enum and boolean checks, numeric
+thresholds, keyword and citation checks — never free-form prose, and never
+another LLM. The run produces a versionable report (prompt and model
+versions, per-suite pass rates, retrieval recall/precision@k and MRR,
+grounding and citation-validity metrics, token usage) and detects
+regressions against a committed baseline, so prompt or model changes are
+regression-testable in CI. Each run is persisted to `evaluation_runs` and
+surfaced on the Control Center's Evaluation card. The same phase closed the
+observability loop: every LLM call now records token usage and the
+response-level model version.
+
+## 7. Future Improvements
 - Tool calling
-- Evaluation
 - Reranking
 - Monitoring

@@ -127,8 +127,23 @@ stage cards' last-run display, the Recent Runs panel, `GET
 write `llm_call_observations` rows linked to the active run, exposing
 per-conversation load, prompt-build, Gemini, persistence, retry, and size
 signals through `GET /api/pipeline/llm-observations` and `app bottlenecks`.
-Token-usage observability remains planned for the broader Phase 7 evaluation
-work.
+Phase 7 extended these observations with per-call token usage
+(`prompt_tokens`/`output_tokens`/`total_tokens` from the provider's usage
+metadata) and response-level model versions.
+
+**Evaluation (Phase 7).** The `evaluate` stage runs the version-controlled
+golden dataset (`evals/golden/`) through the production Understanding,
+Retrieval, and Resolution code paths and compares the resulting canonical
+artifacts deterministically against curated expectations (ADR-015 — no
+LLM-as-a-judge). Each run produces a versionable report
+(`reports/evaluation-report.{json,md}`), persists its headline numbers and
+full report to the `evaluation_runs` table, and detects regressions against
+the committed baseline (`evals/baseline/evaluation-baseline.json`, promoted
+explicitly via `app evaluate --promote-baseline`). The Control Center's
+Evaluation card shows the last run's pass rate, prompt/model versions, and
+regressions. Because evaluation costs live LLM calls without producing
+pipeline data, it is excluded from "Run Remaining Pipeline" and runs only
+explicitly.
 
 ---
 
@@ -327,12 +342,8 @@ Potential production improvements:
 - embedding-assisted issue canonicalization
 - human taxonomy approval workflow
 - cross-encoder reranking
-- evaluation datasets
-- prompt versioning
-- per-AI-call observability (model, latency, token usage — Phase 7, building
-  on the `pipeline_runs` audit trail)
+- prompt versioning beyond per-stage constants (prompt registry, A/B history)
 - human feedback loops
-- automated regression testing
 - tool calling
 - background workers
 - streaming responses

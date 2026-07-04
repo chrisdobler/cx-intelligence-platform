@@ -1,0 +1,25 @@
+%%{init: {"theme": "base", "themeVariables": {"background": "#ffffff", "primaryColor": "#ffffff", "primaryTextColor": "#111111", "primaryBorderColor": "#111111", "lineColor": "#555555", "fontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 20, "rankSpacing": 34}}}%%
+flowchart LR
+    raw["Raw<br/>Conversations"]
+    understand["Conversation<br/>Understanding<br/>(LLM)"]
+    structured["Structured<br/>Conversation"]
+
+    projections["Relational<br/>Projections"]
+    anomalies["Anomaly<br/>Detection"]
+
+    knowledge["KnowledgeDocument<br/>Generation"]
+    embeddings["Embeddings"]
+    retrieval["Semantic<br/>Retrieval"]
+
+    assistant["Resolution<br/>Assistant"]
+
+    raw --> understand --> structured
+    structured --> projections --> anomalies -.-> assistant
+    structured --> knowledge --> embeddings --> retrieval --> assistant
+
+    class raw,structured,projections,anomalies,knowledge,embeddings,retrieval artifact
+    class understand,assistant llm
+
+    classDef artifact fill:#ffffff,stroke:#111111,stroke-width:1.2px,color:#111111;
+    classDef llm fill:#eeeeee,stroke:#111111,stroke-width:1.4px,stroke-dasharray: 5 3,color:#111111;
+    linkStyle default stroke:#555555,stroke-width:1.2px;

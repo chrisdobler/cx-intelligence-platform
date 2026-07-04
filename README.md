@@ -7,7 +7,7 @@ retrieval-augmented generation (RAG).
 - **Design:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - **Plan / status:** [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
 
-> **Status: Phase 6 (Resolution Assistant) complete.**
+> **Status: Phase 7 (Evaluation & Observability) complete.**
 > The dataset ingests idempotently, Gemini extracts the canonical Structured
 > Conversation Object per conversation (issue catalog derived from the Day-1
 > baseline), a deterministic multi-signal rules engine detects anomalies
@@ -204,6 +204,8 @@ Endpoints:
 | `GET /api/knowledge/search` | Metadata-first semantic search over the knowledge base (`q`, `product`, `limit`) |
 | `POST /api/resolution` | Grounded resolution recommendation for one issue (`conversation_id` or free-text `text`) |
 | `GET /api/resolution/issues` | The selectable issues of one analyzed conversation (backs the issue picker) |
+| `GET /api/evaluation/latest` | Headline numbers of the most recent golden-dataset evaluation (backs the AI Quality panel) |
+| `GET /api/evaluation/report` | The latest evaluation report, rendered from the stored run (markdown) |
 | `/api/config` | Non-secret configuration (secrets reported only as set/unset) |
 | `POST /api/config/google-key` | Save the Google AI Studio key from the onboarding card |
 | `http://localhost:8080` | Adminer database UI (auto-login to dev database `cx`) |
@@ -289,7 +291,26 @@ app pipeline       # run every incomplete pipeline stage in dependency order
 app runs           # pipeline audit trail — recent stage runs, newest first
 app bottlenecks --sort llm_seconds  # slowest LLM observations by phase timing
 app anomaly-observations --sort started_at  # anomaly detection stage timings
+app evaluate       # run the golden-dataset evaluation → reports/evaluation-report.{json,md}
+app evaluate --check              # validate the golden dataset only (no DB, no LLM)
+app evaluate --suite retrieval    # run one suite: understanding | retrieval | resolution
+app evaluate --promote-baseline   # promote the current report to the committed baseline
+app evaluate --strict             # exit non-zero on any failed case or regression (CI)
 ```
+
+## Evaluation (Phase 7)
+
+`app evaluate` runs the version-controlled golden dataset (`evals/golden/`)
+through the production AI code paths and compares the structured artifacts
+deterministically — no LLM judges (ADR-015). The report records prompt and
+model versions, per-suite pass rates, retrieval metrics (recall/precision@k,
+MRR, filter-relaxed rate), grounding metrics (citation validity, grounded
+accuracy, downgrades), token usage, and regressions against the committed
+baseline (`evals/baseline/evaluation-baseline.json`). Every run is persisted
+to the `evaluation_runs` table and surfaced on the Control Center's
+Evaluation card. See `evals/golden/README.md` for the case-authoring
+workflow. Evaluation runs only explicitly — "Run Remaining Pipeline" never
+triggers it.
 
 ## Configuration
 

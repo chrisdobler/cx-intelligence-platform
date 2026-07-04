@@ -211,7 +211,7 @@ Interactive assistant capable of suggesting resolution paths.
 
 ---
 
-# Phase 7 — Evaluation
+# Phase 7 — Evaluation ✅
 
 ## Objectives
 
@@ -234,6 +234,41 @@ Record:
 Deliverable:
 
 Basic evaluation and observability framework.
+
+## Delivered
+
+- **Golden evaluation dataset** (`evals/golden/`): version-controlled JSON
+  cases for Conversation Understanding, Retrieval, and the Resolution
+  Assistant, validated on load (`app evaluate --check`); one file per case,
+  omitted fields are simply not checked (see `evals/golden/README.md`).
+- **Deterministic evaluation** (ADR-015): structured artifacts compared field
+  by field — enum/bool exact and allowed-set checks, numeric thresholds,
+  keyword checks, citation validity/provenance; free-form prose is never
+  compared. No LLM-as-a-judge.
+- **Evaluation runner** (`app evaluate`, `cxintel.evaluation`): executes the
+  golden cases through the production prompt/provider/retrieval/grounding
+  code paths without persisting to production tables; per-case LLM failures
+  fail the case, not the run.
+- **Evaluation report**: `reports/evaluation-report.{json,md}` with prompt and
+  model versions, execution time, pass/fail per suite and per case, coverage,
+  retrieval metrics (recall/precision@k, hit@k, MRR, filter-relaxed rate),
+  grounding metrics (citation validity, grounded accuracy, evidence-strength
+  match, downgrade rate), and token usage. Regressions are detected against
+  the committed baseline (`evals/baseline/evaluation-baseline.json`,
+  promoted via `app evaluate --promote-baseline`); every run is persisted to
+  the `evaluation_runs` table. `--strict` gives CI a non-zero exit on
+  failures/regressions.
+- **Observability extensions**: `GoogleProvider` now captures per-call token
+  usage and response-level model versions (thread-local side-channel, frozen
+  `LLMProvider` contract untouched); `llm_call_observations` gained
+  `prompt_tokens`/`output_tokens`/`total_tokens`, and
+  `ConversationAnalysis.model_version` records the real response-level
+  version.
+- **Control Center**: an Evaluation stage card with an inline AI Quality panel
+  (last evaluation, prompt/model versions, overall and per-suite pass rates,
+  regressions, report link), fed by `GET /api/evaluation/latest` and
+  `GET /api/evaluation/report`. Evaluation is excluded from
+  "Run Remaining Pipeline" — it runs only explicitly.
 
 ---
 
@@ -291,7 +326,7 @@ respecting the complexity budget):
   loading, day-level detection, persistence, alert generation, delivery, and
   report-writing timings, surfaced via
   `GET /api/pipeline/anomaly-observations` and `app anomaly-observations`;
-  token usage remains part of the broader Phase 7 observability work.
+  Phase 7 added per-call token usage to `llm_call_observations`.
 
 ### Onboarding / AI setup
 
