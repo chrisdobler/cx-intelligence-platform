@@ -33,6 +33,7 @@ from ..pipeline.orchestrator import (
     anomaly_observations,
     latest_evaluation,
     llm_observations,
+    recent_evaluations,
     recent_runs,
     run_remaining,
     run_stage,
@@ -411,6 +412,95 @@ class EvaluationStatus(BaseModel):
     failed_case_ids: list[str] = Field(default_factory=list)
 
 
+class EvaluationHistoryRun(BaseModel):
+    """One evaluation run as a history point for trend rendering."""
+
+    id: uuid.UUID
+    finished_at: datetime
+    dataset_version: str
+    model: str
+    embedding_model: str
+    understanding_prompt_version: str
+    resolution_prompt_version: str
+    status: str
+    total_cases: int
+    passed_cases: int
+    pass_rate: float
+    suites: list[EvaluationSuiteSummary] = Field(default_factory=list)
+    regression_count: int
+    retrieval_metrics: dict[str, float] | None = None
+    grounding_metrics: dict[str, float] | None = None
+    total_tokens: int | None = None
+    summary: str
+
+
+class EvaluationHistoryComparison(BaseModel):
+    """Current-vs-previous delta for one evaluation metric."""
+
+    key: str
+    label: str
+    current: float | None = None
+    previous: float | None = None
+    delta: float | None = None
+
+
+class EvaluationHistoryResponse(BaseModel):
+    """Historical evaluation data for the Control Center."""
+
+    available: bool
+    runs: list[EvaluationHistoryRun] = Field(default_factory=list)
+    current: EvaluationHistoryRun | None = None
+    previous: EvaluationHistoryRun | None = None
+    best: EvaluationHistoryRun | None = None
+    trend_delta: float | None = None
+    comparisons: list[EvaluationHistoryComparison] = Field(default_factory=list)
+
+
+def _history_run(record: orchestrator.EvaluationRunRecord) -> EvaluationHistoryRun:
+    report = record.report or {}
+    suites = [
+        EvaluationSuiteSummary(
+            suite=suite,
+            total=summary.get("total", 0),
+            passed=summary.get("passed", 0),
+            pass_rate=summary.get("pass_rate", 0.0),
+        )
+        for suite, summary in (report.get("summary") or {}).items()
+    ]
+    return EvaluationHistoryRun(
+        id=record.id,
+        finished_at=record.finished_at,
+        dataset_version=record.dataset_version,
+        model=record.model,
+        embedding_model=record.embedding_model,
+        understanding_prompt_version=record.understanding_prompt_version,
+        resolution_prompt_version=record.resolution_prompt_version,
+        status=record.status,
+        total_cases=record.total_cases,
+        passed_cases=record.passed_cases,
+        pass_rate=record.pass_rate,
+        suites=suites,
+        regression_count=record.regression_count,
+        retrieval_metrics=record.retrieval_metrics,
+        grounding_metrics=record.grounding_metrics,
+        total_tokens=record.total_tokens,
+        summary=f"{record.passed_cases}/{record.total_cases} passed",
+    )
+
+
+def _comparison(
+    key: str, label: str, current: float | None, previous: float | None
+) -> EvaluationHistoryComparison:
+    delta = None if current is None or previous is None else current - previous
+    return EvaluationHistoryComparison(
+        key=key,
+        label=label,
+        current=current,
+        previous=previous,
+        delta=delta,
+    )
+
+
 @app.get("/api/evaluation/latest")
 def api_evaluation_latest() -> EvaluationStatus:
     """The most recent evaluation run's headline numbers (Phase 7)."""
@@ -451,6 +541,55 @@ def api_evaluation_latest() -> EvaluationStatus:
             for case in (report.get("cases") or [])
             if not case.get("passed", False)
         ],
+    )
+
+
+@app.get("/api/evaluation/history")
+def api_evaluation_history(
+    limit: int = Query(default=20, ge=1, le=50),
+) -> EvaluationHistoryResponse:
+    """Recent evaluation runs and previous-run deltas for trend rendering."""
+    records = recent_evaluations(limit=limit)
+    runs = [_history_run(record) for record in records]
+    if not runs:
+        return EvaluationHistoryResponse(available=False)
+
+    current = runs[-1]
+    previous = runs[-2] if len(runs) >= 2 else None
+    best = max(runs, key=lambda run: (run.pass_rate, run.finished_at))
+    trend_delta = (
+        None
+        if previous is None or current.pass_rate == previous.pass_rate
+        else current.pass_rate - previous.pass_rate
+    )
+    comparisons = [
+        _comparison(
+            "overall",
+            "Overall",
+            current.pass_rate,
+            previous.pass_rate if previous else None,
+        )
+    ]
+    previous_suites = (
+        {suite.suite: suite.pass_rate for suite in previous.suites} if previous else {}
+    )
+    for suite in current.suites:
+        comparisons.append(
+            _comparison(
+                suite.suite,
+                suite.suite.title(),
+                suite.pass_rate,
+                previous_suites.get(suite.suite),
+            )
+        )
+    return EvaluationHistoryResponse(
+        available=True,
+        runs=runs,
+        current=current,
+        previous=previous,
+        best=best,
+        trend_delta=trend_delta,
+        comparisons=comparisons,
     )
 
 

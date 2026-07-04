@@ -455,21 +455,8 @@ class EvaluationRunRecord(BaseModel):
     error: str | None
 
 
-def latest_evaluation() -> EvaluationRunRecord | None:
-    """The most recent evaluation run (None when none exist or the DB is down)."""
-    from ..repositories import EvaluationRunRepository
-
-    session = _open_session()
-    if session is None:
-        return None
-    try:
-        run = EvaluationRunRepository(session).latest()
-    except Exception:
-        return None
-    finally:
-        session.close()
-    if run is None:
-        return None
+def _evaluation_run_record(run: Any) -> EvaluationRunRecord:
+    """Serialize an evaluation_runs ORM row for API/control-center use."""
     return EvaluationRunRecord(
         id=run.id,
         pipeline_run_id=run.pipeline_run_id,
@@ -493,6 +480,40 @@ def latest_evaluation() -> EvaluationRunRecord | None:
         duration_seconds=run.duration_seconds,
         error=run.error,
     )
+
+
+def latest_evaluation() -> EvaluationRunRecord | None:
+    """The most recent evaluation run (None when none exist or the DB is down)."""
+    from ..repositories import EvaluationRunRepository
+
+    session = _open_session()
+    if session is None:
+        return None
+    try:
+        run = EvaluationRunRepository(session).latest()
+    except Exception:
+        return None
+    finally:
+        session.close()
+    if run is None:
+        return None
+    return _evaluation_run_record(run)
+
+
+def recent_evaluations(limit: int = 20) -> list[EvaluationRunRecord]:
+    """Recent evaluation runs, chronological for trend rendering."""
+    from ..repositories import EvaluationRunRepository
+
+    session = _open_session()
+    if session is None:
+        return []
+    try:
+        runs = EvaluationRunRepository(session).recent(limit=limit)
+    except Exception:
+        return []
+    finally:
+        session.close()
+    return [_evaluation_run_record(run) for run in reversed(runs)]
 
 
 def _noop_progress(_message: object) -> None:
