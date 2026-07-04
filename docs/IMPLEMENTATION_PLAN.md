@@ -169,12 +169,25 @@ Relevant historical conversations can be retrieved from semantic search.
 
 ## Objectives
 
-Pipeline:
+Implement:
 
-1. Understand incoming conversation
-2. Retrieve similar conversations
-3. Build optimized context
-4. Generate grounded resolution
+- ContextBundle
+- ResolutionResponse
+- Prompt #2
+- Retrieval integration
+- Chat endpoint
+
+The Resolution Assistant should consume only ContextBundle.
+
+The assistant should never retrieve documents itself.
+
+The assistant should never reinterpret raw conversations.
+
+Recommendations must be grounded exclusively in retrieved
+KnowledgeDocuments.
+
+When historical evidence is insufficient, the assistant should return an
+explicitly ungrounded response instead of hallucinating.
 
 Deliverable:
 

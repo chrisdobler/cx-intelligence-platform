@@ -239,10 +239,40 @@ search.
 
 Pipeline:
 
-1. Understand incoming conversation
-2. Retrieve similar resolved conversations
-3. Build optimized context
-4. Generate grounded resolution path
+Incoming Conversation
+
+↓
+
+StructuredConversation
+
+↓
+
+Metadata Filter
+
+↓
+
+Semantic Retrieval
+
+↓
+
+ContextBundle
+
+↓
+
+Resolution Assistant
+
+↓
+
+ResolutionResponse
+
+The Resolution Assistant consumes only ContextBundle.
+
+It never reparses conversations.
+
+It never performs retrieval.
+
+It is responsible only for producing a grounded recommendation from retrieved
+historical evidence.
 
 ---
 
