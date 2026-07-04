@@ -37,6 +37,9 @@ data/backups/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/processed/derived-ai-dataset.zip
+!data/processed/data-artifacts.tgz
+!data/processed/data-artifacts.tgz.sha256
+!data/processed/data-artifacts.RESTORE.md
 
 # Local backup bundles.
 backups/
