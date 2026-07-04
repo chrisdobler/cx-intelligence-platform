@@ -35,7 +35,7 @@ Formatting and structural validation are handled by the schema contract.
 
 ## Prompt 1 — Conversation Understanding
 
-_Status: Implemented (`prompt_version = "1.1"`, `src/cxintel/understanding/prompt.py`)._
+_Status: Implemented (`prompt_version = "1.2"`, `src/cxintel/understanding/prompt.py`)._
 
 ### Purpose
 
@@ -121,9 +121,9 @@ appropriate for reporting and trend analysis.
 Avoid creating new canonical categories when an existing category accurately
 represents the customer's problem.
 
-Differences in wording, symptoms, firmware revisions, or product revisions
-should generally become attributes of the issue rather than new canonical
-categories.
+Differences in wording, symptoms, firmware revisions, hardware revisions,
+product revisions, or troubleshooting state should generally become attributes
+of the issue rather than new canonical categories.
 
 The catalog object communicates whether the issue was successfully normalized
 against the current operational taxonomy.
@@ -197,10 +197,11 @@ Issue catalog normalization:
 description per entry), or, during Day-1 baseline generation, the canonical
 names already seen so far}
 
-Treat issue extraction as a classification task rather than a naming task.
+Treat issue extraction as operational classification rather than issue naming.
 
-Your objective is to classify customer problems into stable operational
-reporting categories.
+Your objective is to classify customer problems into fewer, broader, stable
+operational reporting categories while preserving every distinct operational
+issue the customer experienced.
 
 The Issue Catalog represents the organization's operational taxonomy.
 
@@ -209,8 +210,9 @@ Your responsibility is to maintain the consistency of that taxonomy.
 You are performing operational classification, not inventing user-facing
 labels.
 
-Your goal is to minimize unnecessary category proliferation while accurately
-representing distinct operational problems.
+Your goal is to reduce taxonomy fragmentation and minimize unnecessary
+category proliferation while accurately representing distinct operational
+problems.
 
 Assume an existing category is correct unless there is strong evidence that
 the customer's issue represents a genuinely different operational problem.
@@ -234,13 +236,13 @@ Canonical issue names should be:
 - short
 - lowercase
 - stable over time
-- appropriate for reporting and analytics
+- broad enough for reporting and trend analysis
 - independent of customer wording whenever practical
 
-Differences in wording, symptoms, firmware revisions, or product revisions
-should generally become attributes of an issue rather than new canonical issue
-names, unless those differences represent genuinely different operational
-problems.
+Differences in wording, symptoms, firmware revisions, hardware revisions,
+product revisions, or troubleshooting state should generally become attributes
+of an issue rather than new canonical issue names, unless those differences
+represent genuinely different operational problems.
 
 If you are uncertain whether an issue belongs to an existing category or a
 new category, prefer the existing category.
@@ -270,6 +272,8 @@ pod overheating
 
 "The hub repeatedly goes offline."
 
+"The app cannot stay connected to the Pod."
+
 → canonical_name:
 
 intermittent connectivity
@@ -282,9 +286,39 @@ intermittent connectivity
 
 "Unexpected renewal."
 
+"I was billed for a subscription I already cancelled."
+
 → canonical_name:
 
 incorrect billing charge
+
+--------------------------------
+
+"Water is leaking from the base."
+
+"The base has a crack and fluid is coming out."
+
+"There is moisture under the Pod base."
+
+"The base reservoir is leaking onto the floor."
+
+→ canonical_name:
+
+base water leak
+
+--------------------------------
+
+"I need a replacement unit."
+
+"Support said they would send a new hub."
+
+"The replacement Pod never arrived."
+
+"Can you replace the defective base?"
+
+→ canonical_name:
+
+replacement request
 
 Conversation metadata: product=…, category=…, priority=…, status=…
 

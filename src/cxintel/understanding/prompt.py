@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..models import Conversation, IssueCatalogEntry, Message
 
-PROMPT_VERSION = "1.1"
+PROMPT_VERSION = "1.2"
 
 _INSTRUCTIONS = """\
 You are an information extraction engine for a customer support platform.
@@ -45,14 +45,29 @@ Issue catalog normalization:
 
 {catalog_block}
 
-Treat issue extraction as a classification task rather than a naming task.
+Treat issue extraction as operational classification rather than issue naming.
 
-Your objective is to classify customer problems into stable operational
-reporting categories.
+Your objective is to classify customer problems into fewer, broader, stable
+operational reporting categories while preserving every distinct operational
+issue the customer experienced.
+
+The Issue Catalog represents the organization's operational taxonomy.
+
+Your responsibility is to maintain the consistency of that taxonomy.
+
+You are performing operational classification, not inventing user-facing
+labels.
+
+Your goal is to reduce taxonomy fragmentation and minimize unnecessary
+category proliferation while accurately representing distinct operational
+problems.
+
+Assume an existing category is correct unless there is strong evidence that
+the customer's issue represents a genuinely different operational problem.
 
 For every issue:
 
-- Populate catalog.matched and catalog.confidence.
+- Populate catalog.matched.
 - Reuse an existing catalog category whenever it accurately represents the
   customer's problem.
 - Reuse the catalog's exact canonical_name when matched.
@@ -69,13 +84,89 @@ Canonical issue names should be:
 - short
 - lowercase
 - stable over time
-- appropriate for reporting and analytics
+- broad enough for reporting and trend analysis
 - independent of customer wording whenever practical
 
-Differences in wording, symptoms, firmware revisions, or product revisions
-should generally become attributes of an issue rather than new canonical issue
-names, unless those differences represent genuinely different operational
-problems.
+Differences in wording, symptoms, firmware revisions, hardware revisions,
+product revisions, or troubleshooting state should generally become attributes
+of an issue rather than new canonical issue names, unless those differences
+represent genuinely different operational problems.
+
+If you are uncertain whether an issue belongs to an existing category or a
+new category, prefer the existing category.
+
+Examples
+
+The following customer descriptions should normalize to the same operational
+category:
+
+"The left side of my Pod gets extremely hot."
+
+"The mattress gets too warm after about an hour."
+
+"Temperature fluctuates throughout the night."
+
+"The Pod overheats during sleep."
+
+→ canonical_name:
+
+pod overheating
+
+--------------------------------
+
+"The hub disconnects from WiFi."
+
+"The Pod keeps losing network connectivity."
+
+"The hub repeatedly goes offline."
+
+"The app cannot stay connected to the Pod."
+
+→ canonical_name:
+
+intermittent connectivity
+
+--------------------------------
+
+"Charged twice."
+
+"Duplicate subscription charge."
+
+"Unexpected renewal."
+
+"I was billed for a subscription I already cancelled."
+
+→ canonical_name:
+
+incorrect billing charge
+
+--------------------------------
+
+"Water is leaking from the base."
+
+"The base has a crack and fluid is coming out."
+
+"There is moisture under the Pod base."
+
+"The base reservoir is leaking onto the floor."
+
+→ canonical_name:
+
+base water leak
+
+--------------------------------
+
+"I need a replacement unit."
+
+"Support said they would send a new hub."
+
+"The replacement Pod never arrived."
+
+"Can you replace the defective base?"
+
+→ canonical_name:
+
+replacement request
 """
 
 _EMPTY_CATALOG = """\

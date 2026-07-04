@@ -67,27 +67,34 @@ def _documented_catalog_placeholder() -> str:
 
 
 def test_prompt_version_bumped_for_canonicalization_guidance() -> None:
-    assert PROMPT_VERSION == "1.1"
+    assert PROMPT_VERSION == "1.2"
 
 
 def test_prompt_treats_issue_extraction_as_classification() -> None:
     prompt = _prompt()
 
-    assert "Treat issue extraction as a classification task rather than a naming task." in prompt
-    assert "classify customer problems into stable operational" in prompt
+    assert "Treat issue extraction as operational classification rather than issue naming." in prompt
+    assert "classify customer problems into fewer, broader, stable" in prompt
     assert "reporting categories" in prompt
+    assert "while preserving every distinct operational" in prompt
+    assert "reduce taxonomy fragmentation" in prompt
 
 
 def test_prompt_guides_catalog_reuse_and_customer_wording_separation() -> None:
     prompt = _prompt()
 
+    assert "Issue Catalog represents the organization's operational taxonomy" in prompt
+    assert "maintain the consistency of that taxonomy" in prompt
     assert "Reuse an existing catalog category whenever it accurately represents" in prompt
     assert "Reuse the catalog's exact canonical_name when matched." in prompt
     assert "Preserve the customer's original wording separately" in prompt
     assert "customer_description" in prompt
     assert "Avoid creating a new canonical category when an existing category" in prompt
     assert "appropriate fit" in prompt
-    assert "firmware revisions, or product revisions" in prompt
+    assert "firmware revisions, hardware revisions" in prompt
+    assert "troubleshooting state" in prompt
+    assert "If you are uncertain whether an issue belongs to an existing category" in prompt
+    assert "prefer the existing category" in prompt
 
 
 def test_prompt_defines_stable_reporting_oriented_canonical_names() -> None:
@@ -97,8 +104,23 @@ def test_prompt_defines_stable_reporting_oriented_canonical_names() -> None:
     assert "- short" in prompt
     assert "- lowercase" in prompt
     assert "- stable over time" in prompt
-    assert "- appropriate for reporting and analytics" in prompt
+    assert "- broad enough for reporting and trend analysis" in prompt
     assert "- independent of customer wording whenever practical" in prompt
+
+
+def test_prompt_includes_operational_normalization_examples() -> None:
+    prompt = _prompt()
+
+    assert '"Temperature fluctuates throughout the night."' in prompt
+    assert "pod overheating" in prompt
+    assert '"The hub repeatedly goes offline."' in prompt
+    assert "intermittent connectivity" in prompt
+    assert '"Duplicate subscription charge."' in prompt
+    assert "incorrect billing charge" in prompt
+    assert '"The base has a crack and fluid is coming out."' in prompt
+    assert "base water leak" in prompt
+    assert '"The replacement Pod never arrived."' in prompt
+    assert "replacement request" in prompt
 
 
 def test_prompt_library_prompt_1_matches_runtime_instruction_text() -> None:
@@ -124,4 +146,4 @@ def test_prompt_library_documents_prompt_1_version() -> None:
     doc = (REPO_ROOT / "docs" / "PROMPT_LIBRARY.md").read_text()
 
     assert "## Prompt 1" in doc
-    assert '_Status: Implemented (`prompt_version = "1.1"`' in doc
+    assert '_Status: Implemented (`prompt_version = "1.2"`' in doc
