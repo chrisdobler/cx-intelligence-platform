@@ -134,11 +134,15 @@ not just observed:
   immediately.
 - **Anomaly Analysis panel** — an operational dashboard embedded (always
   visible) in the Anomaly Detection stage card, which spans the full width:
-  an hourly issue-frequency timeline for the selected anomaly (real
-  conversation timestamps, so the operator sees when a spike began and how
-  it evolved), one card per detected anomaly (severity, triggering signals,
-  baseline → current metrics, recommended action), and the raw markdown
-  report as a collapsible section.
+  an hourly timeline of the top four anomalies (real conversation
+  timestamps, so the operator sees when a spike began and how it evolved)
+  with the selected anomaly highlighted — click a charted anomaly card to
+  switch; the highest-severity anomaly is selected by default — one card
+  per anomalous issue, aggregating its observation periods (worst severity,
+  triggering signals, absolute counts first — baseline → current per day —
+  with percent change shown only when the baseline is large enough to be
+  meaningful, recommended action), and the raw markdown report as a
+  collapsible section.
   The report remains served at `GET /api/anomalies/report`.
 - **Resolution Assistant panel** — grounded decision support for agents:
   describe a new ticket (structured via Prompt #1, never persisted) or point

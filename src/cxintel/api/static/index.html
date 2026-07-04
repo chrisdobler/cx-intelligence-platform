@@ -179,13 +179,11 @@
       color: var(--muted); margin: 18px 0 10px; font-weight: 600;
     }
     .trend-chart { width: 100%; height: auto; display: block; }
-    .timeline-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-    .timeline-pill {
-      font: inherit; font-size: 12.5px; font-weight: 600; padding: 4px 10px;
-      border: 1px solid var(--border); border-radius: 999px; background: var(--card);
-      color: var(--muted); cursor: pointer;
-    }
-    .timeline-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .trend-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+    .trend-legend .li { display: inline-flex; align-items: center; gap: 6px; }
+    .trend-legend .li.selected { font-weight: 700; color: var(--text); }
+    .trend-legend .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+    .anomaly-card.selectable { cursor: pointer; }
     .anomaly-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
     @media (max-width: 720px) { .anomaly-cards { grid-template-columns: 1fr; } }
     .anomaly-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
@@ -200,8 +198,8 @@
     .anomaly-metrics { display: flex; align-items: baseline; gap: 18px; }
     .anomaly-metrics .m .k { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
     .anomaly-metrics .m .v { font-size: 20px; font-weight: 750; }
-    .anomaly-metrics .delta { font-size: 20px; font-weight: 800; color: var(--red); }
-    .anomaly-metrics .delta.new { color: var(--yellow); }
+    .anomaly-metrics .m .d { font-size: 12px; font-weight: 700; color: var(--red); }
+    .anomaly-metrics .m .d.new, .anomaly-metrics .m .d.small { color: var(--yellow); }
     .anomaly-card .why { margin: 0; color: var(--muted); font-size: 13px; }
     .anomaly-action { border-left: 3px solid var(--accent); background: #f6f7f9; border-radius: 6px; padding: 8px 10px; font-size: 13px; }
     .anomaly-action .k { font-weight: 700; }
@@ -892,27 +890,49 @@ Imported conversations and messages will NOT be modified.`;
     let rawReportOpen = false;   // <details> state survives destructive re-renders
     let anomaliesExpanded = false;
     let anomalyPanelData = null;
-    let selectedAnomalyIssue = null;      // which anomaly's timeline is plotted
+    let selectedAnomalyIssue = null;      // the issue whose card/line is selected
     const timelineCache = new Map();      // issue → timeline payload (null while loading)
     const ANOMALY_INITIAL_VISIBLE = 2;
-    const TREND_COLORS = ["#1f2a44", "#f04438", "#f79009", "#12b76a", "#7a5af8"];
+    // Presentation-only: below this baseline count a percent change is a
+    // mathematical artifact (1 → 170 is "+16900%"), so the card shows an
+    // "emerging" label instead. Detection thresholds are unaffected.
+    const MIN_BASELINE_FOR_PCT = 10;
+    // Series palette for the four charted anomalies — deliberately no
+    // near-black so selection never reads as a black line.
+    const TREND_COLORS = ["#2e90fa", "#f04438", "#f79009", "#12b76a"];
     const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
     const fmtSignal = (s) =>
       s.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
     const fmtDateTime = (v) => v ? new Date(v).toLocaleString() : "unavailable";
     const fmtHourUTC = (ms) => `${String(new Date(ms).getUTCHours()).padStart(2, "0")}:00`;
 
-    function timelineChartSVG(timeline) {
-      const points = timeline.points || [];
-      if (!points.length) return "";
+    function timelineChartSVG(seriesList, selectedIssue) {
+      // seriesList: [{issue, timeline}] in top-anomaly order (colors follow it).
+      const loaded = seriesList.filter((s) => s.timeline && (s.timeline.points || []).length);
+      if (!loaded.length) return "";
       const W = 920, H = 240, L = 44, R = 12, T = 24, B = 30;
-      const n = points.length;
-      const maxCount = Math.max(1, ...points.map((p) => p.count));
+      const stepMs = (loaded[0].timeline.bucket_seconds || 3600) * 1000;
+      // Shared X domain: union of every series' bucket range. A series has
+      // zero occurrences outside its own (zero-filled) range by construction.
+      const t0 = Math.min(...loaded.map((s) => new Date(s.timeline.points[0].t).getTime()));
+      const tEnd = Math.max(
+        ...loaded.map((s) => new Date(s.timeline.points[s.timeline.points.length - 1].t).getTime()));
+      const n = Math.round((tEnd - t0) / stepMs) + 1;
+      const tAt = (i) => t0 + i * stepMs;
+      const countsFor = (s) => {
+        const byMs = new Map(s.timeline.points.map((p) => [new Date(p.t).getTime(), p.count]));
+        return Array.from({ length: n }, (_, i) => byMs.get(tAt(i)) ?? 0);
+      };
+      const series = loaded.map((s, si) => ({
+        issue: s.issue,
+        color: TREND_COLORS[seriesList.indexOf(s) % TREND_COLORS.length],
+        counts: countsFor(s),
+        selected: s.issue === selectedIssue,
+      }));
+      const maxCount = Math.max(1, ...series.flatMap((s) => s.counts));
       const x = (i) => n === 1 ? L + (W - L - R) / 2 : L + (W - L - R) * (i / (n - 1));
       const y = (v) => T + (H - T - B) * (1 - v / maxCount);
-      const t0 = new Date(points[0].t).getTime();
-      const stepMs = (timeline.bucket_seconds || 3600) * 1000;
-      const dayStarts = Object.entries(timeline.day_starts || {})
+      const dayStarts = Object.entries(loaded[0].timeline.day_starts || {})
         .map(([day, iso]) => ({ day, ms: new Date(iso).getTime() }))
         .sort((a, b) => a.ms - b.ms);
       const dayFor = (ms) => {
@@ -926,44 +946,82 @@ Imported conversations and messages will NOT be modified.`;
          <text x="${L - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="#667085">${t}</text>`
       ).join("");
       const labelEvery = Math.max(1, Math.ceil(n / 8));
-      const xLabels = points.map((p, i) => (i % labelEvery)
+      const xLabels = Array.from({ length: n }, (_, i) => (i % labelEvery)
         ? ""
-        : `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="#667085">${fmtHourUTC(new Date(p.t).getTime())}</text>`
+        : `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="#667085">${fmtHourUTC(tAt(i))}</text>`
       ).join("");
-      const tEnd = t0 + (n - 1) * stepMs;
       const dayMarkers = dayStarts.filter((s) => s.ms >= t0 && s.ms <= tEnd).map((s) => {
         const xi = n === 1 ? x(0) : L + (W - L - R) * (((s.ms - t0) / stepMs) / (n - 1));
         return `<line x1="${xi}" y1="${T - 6}" x2="${xi}" y2="${H - B}" stroke="#98a2b3" stroke-dasharray="4 3"/>
           <text x="${xi + 4}" y="${T + 4}" font-size="11" font-weight="600" fill="#667085">Day ${esc(s.day)}</text>`;
       }).join("");
-      const color = TREND_COLORS[0];
-      const line = points.map((p, i) => `${x(i)},${y(p.count)}`).join(" ");
-      const dots = points.map((p, i) => {
-        const ms = new Date(p.t).getTime();
-        const day = dayFor(ms);
-        return `<circle cx="${x(i)}" cy="${y(p.count)}" r="2.5" fill="${color}"><title>${day ? `Day ${esc(day)} ` : ""}${fmtHourUTC(ms)} — ${p.count}</title></circle>`;
+      // Dimmed lines first so the selected one draws on top, with dots.
+      const lines = [...series].sort((a, b) => (a.selected ? 1 : 0) - (b.selected ? 1 : 0)).map((s) => {
+        const line = s.counts.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+        const style = s.selected ? 'stroke-width="2.5"' : 'stroke-width="1.5" opacity="0.35"';
+        const dots = !s.selected ? "" : s.counts.map((v, i) => {
+          const ms = tAt(i);
+          const day = dayFor(ms);
+          return `<circle cx="${x(i)}" cy="${y(v)}" r="2.5" fill="${s.color}"><title>${day ? `Day ${esc(day)} ` : ""}${fmtHourUTC(ms)} — ${v}</title></circle>`;
+        }).join("");
+        return `<polyline points="${line}" fill="none" stroke="${s.color}" ${style}/>${dots}`;
       }).join("");
-      return `<svg class="trend-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Hourly issue frequency timeline">${grid}${dayMarkers}${xLabels}<polyline points="${line}" fill="none" stroke="${color}" stroke-width="2"/>${dots}</svg>`;
+      const legend = series.map((s) =>
+        `<span class="li${s.selected ? " selected" : ""}"><span class="swatch" style="background:${s.color}"></span>${esc(s.issue)}</span>`
+      ).join("");
+      return `<svg class="trend-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Hourly issue frequency timeline">${grid}${dayMarkers}${xLabels}${lines}</svg>
+        <div class="trend-legend">${legend}</div>`;
     }
 
-    function anomalyCardHTML(a) {
-      const chips = a.signals.map((s) => `<span class="chip">✓ ${esc(fmtSignal(s))}</span>`).join("");
-      const pc = a.metrics.percent_change;
-      const delta = (pc === null || pc === undefined)
-        ? `<div class="delta new">new</div>`
-        : `<div class="delta">${pc >= 0 ? "+" : ""}${Math.round(pc)}%</div>`;
-      return `<div class="anomaly-card">
-        <div class="head"><span class="issue">${esc(a.issue)}</span><span class="sev ${esc(a.severity)}">${esc(a.severity)}</span></div>
+    // One card per canonical issue. `group.rows` are that issue's anomaly
+    // records, one per observation day (the DB keeps them separate); the
+    // card presents them together, each day's count next to its own delta.
+    function anomalyCardHTML(group, color, selected) {
+      const rows = group.rows;
+      const worst = rows.reduce((best, r) =>
+        (SEVERITY_RANK[r.severity] ?? 9) < (SEVERITY_RANK[best.severity] ?? 9) ? r : best);
+      const signals = [...new Set(rows.flatMap((r) => r.signals))];
+      const chips = signals.map((s) => `<span class="chip">✓ ${esc(fmtSignal(s))}</span>`).join("");
+      // Counts are the primary signal (baseline → current); the percent is
+      // secondary and only meaningful when the baseline isn't tiny.
+      const dayCol = (r) => {
+        const pc = r.metrics.percent_change;
+        const baseline = r.metrics.baseline_count;
+        let d;
+        if (pc === null || pc === undefined) {
+          d = `<div class="d new">new issue</div>`;
+        } else if (baseline < MIN_BASELINE_FOR_PCT) {
+          d = `<div class="d small">emerging — baseline too small for %</div>`;
+        } else {
+          d = `<div class="d">${pc >= 0 ? "+" : ""}${Math.round(pc)}%</div>`;
+        }
+        return `<div class="m"><div class="k">Day ${r.day}</div>
+          <div class="v">${fmtNum(baseline)} → ${fmtNum(r.metrics.current_count)}</div>${d}</div>`;
+      };
+      const observations = rows
+        .map((r) => `Day ${r.day} ${fmtDateTime(r.observation_date)}`).join(" · ");
+      const why = rows
+        .map((r) => esc(rows.length > 1 ? `Day ${r.day} — ${r.summary}` : r.summary))
+        .join("<br>");
+      // Charted issues are clickable and carry their series color: a left
+      // edge always, plus a same-colored ring on the selected card.
+      const cls = `anomaly-card${color ? " selectable" : ""}${selected ? " selected" : ""}`;
+      const style = color
+        ? ` style="border-left: 3px solid ${color};${selected ? ` border-color: ${color}; box-shadow: 0 0 0 1px ${color};` : ""}"`
+        : "";
+      const attrs = color
+        ? ` data-issue="${esc(group.issue)}" role="button" tabindex="0" aria-pressed="${selected}"`
+        : "";
+      return `<div class="${cls}"${attrs}${style}>
+        <div class="head"><span class="issue">${esc(group.issue)}</span><span class="sev ${esc(worst.severity)}">${esc(worst.severity)}</span></div>
         <div class="signal-chips">${chips}</div>
         <div class="anomaly-metrics">
-          <div class="m"><div class="k">Baseline</div><div class="v">${fmtNum(a.metrics.baseline_count)}</div></div>
-          <div class="m"><div class="k">Day ${a.day}</div><div class="v">${fmtNum(a.metrics.current_count)}</div></div>
-          ${delta}
+          ${rows.map(dayCol).join("")}
         </div>
-        <div class="anomaly-action"><span class="k">Observation:</span> ${esc(fmtDateTime(a.observation_date))}
-          <span class="k">Baseline:</span> ${esc(fmtDateTime(a.baseline_date))}</div>
-        <p class="why">${esc(a.summary)}</p>
-        <div class="anomaly-action"><span class="k">Recommended action:</span> ${esc(a.recommended_action)}</div>
+        <div class="anomaly-action"><span class="k">Baseline:</span> ${esc(fmtDateTime(rows[0].baseline_date))}
+          <span class="k">Observed:</span> ${esc(observations)}</div>
+        <p class="why">${why}</p>
+        <div class="anomaly-action"><span class="k">Recommended action:</span> ${esc(worst.recommended_action)}</div>
       </div>`;
     }
 
@@ -986,12 +1044,16 @@ Imported conversations and messages will NOT be modified.`;
           }
         });
       }
-      el.querySelectorAll("button[data-timeline-issue]").forEach((pill) => {
-        pill.addEventListener("click", () => {
-          selectedAnomalyIssue = pill.dataset.timelineIssue;
+      el.querySelectorAll(".anomaly-card[data-issue]").forEach((card) => {
+        const select = () => {
+          selectedAnomalyIssue = card.dataset.issue;
           if (anomalyPanelData) {
             renderAnomalyPanel(anomalyPanelData.anomalies, anomalyPanelData.report);
           }
+        };
+        card.addEventListener("click", select);
+        card.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); select(); }
         });
       });
     }
@@ -1005,20 +1067,35 @@ Imported conversations and messages will NOT be modified.`;
         timeline = await res.json();
       } catch (e) { /* rendered as "no timeline data" */ }
       timelineCache.set(issue, timeline);
-      if (anomalyPanelData && selectedAnomalyIssue === issue) {
+      // Any charted series arriving refreshes the panel (chart waits for all).
+      if (anomalyPanelData) {
         renderAnomalyPanel(anomalyPanelData.anomalies, anomalyPanelData.report);
       }
     }
 
     function renderAnomalyPanel(anomalies, report) {
       anomalyPanelData = { anomalies, report };
-      const ordered = [...anomalies].sort((a, b) =>
-        (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9)
-        || Math.abs(b.metrics.percent_change ?? 0) - Math.abs(a.metrics.percent_change ?? 0));
-      const visibleAnomalies = anomaliesExpanded
-        ? ordered
-        : ordered.slice(0, ANOMALY_INITIAL_VISIBLE);
-      const hiddenCount = Math.max(0, ordered.length - ANOMALY_INITIAL_VISIBLE);
+      // The DB keeps one anomaly record per (observation day, issue); the
+      // panel presents one card per canonical issue, grouping its periods.
+      const byIssue = new Map();
+      for (const a of anomalies) {
+        if (!byIssue.has(a.issue)) byIssue.set(a.issue, []);
+        byIssue.get(a.issue).push(a);
+      }
+      const groupRank = (rows) => ({
+        sev: Math.min(...rows.map((r) => SEVERITY_RANK[r.severity] ?? 9)),
+        pc: Math.max(...rows.map((r) => Math.abs(r.metrics.percent_change ?? 0))),
+      });
+      const groups = [...byIssue.entries()]
+        .map(([issue, rows]) => ({ issue, rows: [...rows].sort((a, b) => a.day - b.day) }))
+        .sort((g1, g2) => {
+          const r1 = groupRank(g1.rows), r2 = groupRank(g2.rows);
+          return r1.sev - r2.sev || r2.pc - r1.pc;
+        });
+      const visibleGroups = anomaliesExpanded
+        ? groups
+        : groups.slice(0, ANOMALY_INITIAL_VISIBLE);
+      const hiddenCount = Math.max(0, groups.length - ANOMALY_INITIAL_VISIBLE);
       const moreControl = hiddenCount
         ? `<div class="anomaly-more">
             <button class="btn" type="button" data-anomaly-more="1" aria-expanded="${anomaliesExpanded}">
@@ -1026,35 +1103,42 @@ Imported conversations and messages will NOT be modified.`;
             </button>
           </div>`
         : "";
-      // One pill per anomaly issue (ordered like the cards); the chart plots
-      // only the selected one — a timeline, not a multi-series dashboard.
-      const pillAnomalies = ordered.filter(
-        (a, i) => ordered.findIndex((b) => b.issue === a.issue) === i);
-      if (!selectedAnomalyIssue || !pillAnomalies.some((a) => a.issue === selectedAnomalyIssue)) {
-        selectedAnomalyIssue = pillAnomalies.length ? pillAnomalies[0].issue : null;
+      // The chart plots the top 4 issues (worst severity, then max |Δ|),
+      // each line spanning every observation period. Clicking a charted
+      // card selects its issue; the top-ranked issue is selected by default.
+      const chartedIssues = groups.slice(0, 4).map((g) => g.issue);
+      if (!selectedAnomalyIssue || !chartedIssues.includes(selectedAnomalyIssue)) {
+        selectedAnomalyIssue = chartedIssues.length ? chartedIssues[0] : null;
       }
-      const pills = pillAnomalies.map((a) =>
-        `<button class="timeline-pill${a.issue === selectedAnomalyIssue ? " active" : ""}" type="button"
-           data-timeline-issue="${esc(a.issue)}" aria-pressed="${a.issue === selectedAnomalyIssue}">
-           ${esc(a.issue)} — Day ${a.day}</button>`
-      ).join("");
-      const timeline = selectedAnomalyIssue ? timelineCache.get(selectedAnomalyIssue) : undefined;
-      if (selectedAnomalyIssue && timeline === undefined) fetchTimeline(selectedAnomalyIssue);
-      const chart = (timeline === undefined || timeline === null)
+      chartedIssues.forEach((issue) => {
+        if (!timelineCache.has(issue)) fetchTimeline(issue);
+      });
+      const seriesList = chartedIssues.map((issue) => ({
+        issue, timeline: timelineCache.get(issue),
+      }));
+      const loading = seriesList.some((s) => s.timeline === undefined || s.timeline === null);
+      const chart = loading
         ? `<p class="anomaly-empty">Loading timeline…</p>`
-        : (timelineChartSVG(timeline) || `<p class="anomaly-empty">No timeline data available.</p>`);
+        : (timelineChartSVG(seriesList, selectedAnomalyIssue)
+           || `<p class="anomaly-empty">No timeline data available.</p>`);
       anomalyPanelHTML = `
         <div class="panel-head">
           <div>
             <div class="panel-title">Anomaly Analysis</div>
-            <div class="panel-sub">${anomalies.length} anomalies detected vs the Day-1 baseline</div>
+            <div class="panel-sub">${anomalies.length} anomalies across ${groups.length} issues vs the Day-1 baseline</div>
           </div>
         </div>
         <h3>Issue Frequency Timeline (hourly)</h3>
-        <div class="timeline-pills">${pills}</div>
         ${chart}
         <h3>Detected Anomalies</h3>
-        <div class="anomaly-cards">${visibleAnomalies.map(anomalyCardHTML).join("")}</div>
+        <div class="anomaly-cards">${visibleGroups.map((g) => {
+          const si = chartedIssues.indexOf(g.issue);
+          return anomalyCardHTML(
+            g,
+            si === -1 ? null : TREND_COLORS[si % TREND_COLORS.length],
+            g.issue === selectedAnomalyIssue,
+          );
+        }).join("")}</div>
         ${moreControl}
         <h3>Raw Report
           <a class="raw-link" href="/api/anomalies/report" target="_blank" rel="noopener">open raw ↗</a>
