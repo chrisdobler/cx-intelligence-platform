@@ -54,6 +54,7 @@ Unresolved conversations are intentionally excluded from the knowledge base.
 Suggested schema:
 
 - issue
+- customer_description
 - product
 - symptoms
 - prerequisites
@@ -77,13 +78,20 @@ Example structure:
 
 Problem
 
-Symptoms
-
-Diagnostics Performed
+Customer reported
 
 Resolution
 
 Resolution Type
+
+Outcome
+
+Symptoms
+
+Support actions
+
+The rendering omits standalone metadata such as product because retrieval uses
+that field as a deterministic metadata filter before vector search.
 
 The application generates this text using a template.
 

@@ -75,12 +75,29 @@ def test_one_resolved_issue_produces_one_document() -> None:
     doc = docs[0]
     assert isinstance(doc, KnowledgeDocument)
     assert doc.issue == "base water leak"
+    assert doc.customer_description == "customer says base water leak"
     assert doc.product == "Pod 5"
     assert doc.symptoms == ["water pooling under the base"]
     assert doc.resolution_type == "troubleshooting"
     assert doc.resolution_summary == "replaced the base seal"
     assert doc.actions == ["checked the valve"]
     assert doc.outcome == "resolved"
+
+
+def test_knowledge_document_accepts_legacy_json_without_customer_description() -> None:
+    doc = KnowledgeDocument.model_validate(
+        {
+            "issue": "wifi drop",
+            "product": "Hub 2",
+            "symptoms": ["offline"],
+            "prerequisites": [],
+            "resolution_type": "troubleshooting",
+            "resolution_summary": "router restarted",
+            "actions": ["restarted router"],
+            "outcome": "resolved",
+        }
+    )
+    assert doc.customer_description == ""
 
 
 def test_unresolved_issues_are_excluded() -> None:
@@ -126,14 +143,46 @@ def test_generation_is_deterministic() -> None:
 
 
 def test_rendered_text_contains_all_populated_sections() -> None:
-    doc = knowledge_documents(make_structured([make_issue()]))[0]
+    doc = knowledge_documents(
+        make_structured(
+            [
+                make_issue(
+                    "base water leak",
+                    resolution_summary="replaced the base seal",
+                    symptoms=["water pooling under the base", "seal is damp"],
+                )
+            ],
+            resolution_type="replacement",
+            actions=["checked the valve", "shipped a replacement base"],
+        )
+    )[0]
     text = render_knowledge_text(doc)
-    assert "base water leak" in text
-    assert "Pod 5" in text
-    assert "water pooling under the base" in text
-    assert "replaced the base seal" in text
-    assert "troubleshooting" in text
-    assert "checked the valve" in text
+    assert text.splitlines() == [
+        "Problem:",
+        "base water leak",
+        "",
+        "Customer reported:",
+        "customer says base water leak",
+        "",
+        "Resolution:",
+        "replaced the base seal",
+        "",
+        "Resolution type:",
+        "replacement",
+        "",
+        "Outcome:",
+        "resolved",
+        "",
+        "Symptoms:",
+        "- water pooling under the base",
+        "- seal is damp",
+        "",
+        "Support actions:",
+        "- checked the valve",
+        "- shipped a replacement base",
+    ]
+    assert "Product:" not in text
+    assert "Actions taken:" not in text
 
 
 def test_rendered_text_omits_empty_sections() -> None:
@@ -153,7 +202,18 @@ def test_rendered_text_omits_empty_sections() -> None:
     assert "Product" not in text
     assert "Symptoms" not in text
     assert "Resolution type" not in text
-    assert "Actions" not in text
+    assert "Customer reported" not in text
+    assert "Support actions" not in text
+    assert text.splitlines() == [
+        "Problem:",
+        "wifi drop",
+        "",
+        "Resolution:",
+        "router restarted",
+        "",
+        "Outcome:",
+        "resolved",
+    ]
 
 
 def test_rendered_text_reads_naturally() -> None:
@@ -163,3 +223,50 @@ def test_rendered_text_reads_naturally() -> None:
     assert "{" not in text and "}" not in text
     assert text == render_knowledge_text(doc)
     assert text.startswith("Problem:")
+
+
+def test_rendered_text_trims_and_deduplicates_exact_bullets() -> None:
+    doc = KnowledgeDocument(
+        issue="hub detection failure",
+        customer_description="App is not detecting the hub.",
+        product="Hub 2",
+        symptoms=[
+            "Hub LED blinking",
+            " Hub LED blinking ",
+            "",
+            "hub detection failure",
+        ],
+        prerequisites=[],
+        resolution_type="replacement",
+        resolution_summary="Replacement approved due to a known hardware defect.",
+        actions=[
+            "Firmware verified",
+            " replacement ",
+            "Firmware verified",
+            "resolved",
+        ],
+        outcome="resolved",
+    )
+    text = render_knowledge_text(doc)
+    assert text.splitlines() == [
+        "Problem:",
+        "hub detection failure",
+        "",
+        "Customer reported:",
+        "App is not detecting the hub.",
+        "",
+        "Resolution:",
+        "Replacement approved due to a known hardware defect.",
+        "",
+        "Resolution type:",
+        "replacement",
+        "",
+        "Outcome:",
+        "resolved",
+        "",
+        "Symptoms:",
+        "- Hub LED blinking",
+        "",
+        "Support actions:",
+        "- Firmware verified",
+    ]

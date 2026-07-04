@@ -2,21 +2,36 @@
 
 # Conversation Intelligence Platform
 
-> **Note:** This document intentionally summarizes the implementation. Supporting architectural rationale, detailed ADRs, prompt specifications, and pipeline documentation are available in the accompanying project documentation.
 
-> This document will become the final submission write-up. Keep it under two pages of text. Populate sections as implementation progresses.
+### Supporting Documentation
+
+This write-up focuses on the final architecture and engineering outcomes. Detailed implementation decisions are documented separately:
+
+- **Architecture Overview:** `ARCHITECTURE.md`
+- **Architectural Decision Records (ADRs):** `docs/ARCHITECTURE_DECISIONS.md`
+- **Implementation Roadmap:** `docs/IMPLEMENTATION_PLAN.md`
+- **Production Prompt Specifications:** `docs/PROMPT_LIBRARY.md`
 
 ## 1. Problem
-- What problem is being solved?
-- Why this architecture?
+Customer support organizations accumulate thousands of conversations, but transforming those conversations into operational intelligence is difficult. Traditional analytics cannot reason over free-form conversations, while purely LLM-driven systems often become opaque pipelines whose outputs are difficult to validate, test, and reuse.
+
+This project demonstrates a production-oriented architecture that performs semantic understanding exactly once, converts that understanding into strongly typed canonical artifacts, and enables deterministic downstream capabilities including anomaly detection, semantic retrieval, and grounded resolution assistance.
 
 ## 2. Overall Architecture
-- Final architecture diagram (reference ARCHITECTURE.md)
-- Brief pipeline overview
 
-**Figure 1 — High-Level Architecture**
+The complete architecture, pipeline descriptions, orchestration model, and technology decisions are documented in **`ARCHITECTURE.md`**. Figure 1 summarizes the overall processing flow.
 
-![Figure 1 — Overall Architecture](docs/diagrams/figure-1-overall-architecture.svg)
+![Figure 1: High-level architecture of the Conversation Intelligence Platform.](docs/diagrams/figure-1-overall-architecture.svg)
+
+*Figure 1. High-level architecture of the Conversation Intelligence Platform.*
+
+### Pipeline Overview / System Workflow
+
+The pipeline is orchestrated as a sequence of independently executable stages with enforced dependencies, visible progress, and execution metrics. Figure 2 shows the Control Center view used to run stages, monitor work completed and remaining, inspect throughput and retries, and expose operational status. The UI exercises the exact same orchestration layer as the CLI, so local operation and automated execution share one control path.
+
+![Figure 2: Pipeline Control Center used to orchestrate every stage, monitor progress, and expose operational status.](docs/images/pipeline-control-center.png)
+
+*Figure 2. Pipeline Control Center used to orchestrate every stage, monitor progress, and expose operational status.*
 
 ### Architectural Philosophy
 
@@ -39,10 +54,6 @@ This approach improves reproducibility, simplifies testing, enables
 deterministic regression evaluation, and keeps AI isolated to the parts of the
 system that genuinely require semantic understanding.
 
-
-**Figure 2 — Issue Extraction Growth During Development**
-
-![Figure 2 — Issue Extraction Growth](docs/diagrams/figure-2-issue-extraction-growth.svg)
 
 ### Validation During Development
 
@@ -86,10 +97,15 @@ detection, analytics, and retrieval—without increasing the complexity of the
 rules engine.
 
 ## 3. Part 1 — Clustering & Anomaly Detection
-- Approach
-- Design decisions
-- Results
-- Tradeoffs
+Conversation Understanding performs the platform's only semantic reasoning. From that point onward, anomaly detection operates entirely over deterministic relational projections derived from the canonical Structured Conversation Object.
+
+This separation keeps anomaly detection explainable, reproducible, independently testable, and free from additional LLM variability while allowing improvements in issue classification to benefit every downstream consumer without increasing the complexity of the detection engine.
+
+Figure 3 shows the deterministic rules engine comparing each day's issue statistics against the Day-1 baseline. The dashboard makes volume spikes, severity drift, novel issues, and other explainable anomalies visible, and the same anomaly artifacts drive Slack alerts and reports.
+
+![Figure 3: Deterministic anomaly detection comparing each day's issue statistics against the Day-1 baseline.](docs/images/anomaly-analysis-dashboard.png)
+
+*Figure 3. Deterministic anomaly detection comparing each day's issue statistics against the Day-1 baseline.*
 
 ### Canonical Issue Classification
 
@@ -120,16 +136,15 @@ data without reconstructing temporal context from the underlying
 conversations.
 
 ## 4. Part 2 — Resolution Assistant
-- KnowledgeDocument generation
-- Deterministic knowledge synthesis
-- Knowledge base
-- Retrieval strategy
-- Context engineering
-- Resolution generation
+Resolved conversations are transformed into deterministic KnowledgeDocuments and embedded to form the platform's semantic knowledge base. Incoming customer issues are matched against this historical corpus using metadata filtering followed by semantic retrieval.
 
-**Figure 3 — Resolution Assistant Pipeline**
+The Resolution Assistant consumes only the resulting ContextBundle. By separating retrieval from generation, the assistant focuses exclusively on synthesizing grounded recommendations from historical evidence rather than searching for or reinterpreting information.
 
-![Figure 3 — Resolution Assistant Pipeline](docs/diagrams/figure-3-resolution-assistant-pipeline.svg)
+Figure 5 shows the assistant turning filtered semantic retrieval into a grounded recommendation, with citations, evidence strength, and the retrieved historical records kept visible beside the generated response.
+
+![Figure 5: Retrieval-Augmented Resolution Assistant producing grounded recommendations with supporting historical evidence.](docs/images/resolution-assistant.png)
+
+*Figure 5. Retrieval-Augmented Resolution Assistant producing grounded recommendations with supporting historical evidence.*
 
 ### Grounded Recommendations
 
@@ -166,7 +181,7 @@ reinterprets conversations (a new free-text ticket is structured once by the
 existing Prompt #1 and is not persisted).
 
 ## 5. Key Engineering Decisions
-Rather than reproducing every architectural decision, this write-up highlights the most consequential design choices. The complete Architectural Decision Record (ADR) log is available in `docs/ARCHITECTURE_DECISIONS.md`.
+Rather than reproducing every architectural decision, this write-up highlights the decisions that most influenced the final architecture. The complete rationale, alternatives considered, and tradeoffs are documented in the Architectural Decision Records (**`docs/ARCHITECTURE_DECISIONS.md`**).
 
 Key decisions include:
 
@@ -194,6 +209,16 @@ regression-testable in CI. Each run is persisted to `evaluation_runs` and
 surfaced on the Control Center's Evaluation card. The same phase closed the
 observability loop: every LLM call now records token usage and the
 response-level model version.
+
+Figure 4 shows the deterministic evaluation dashboard used for historical trend tracking, regression detection, versioned prompt evaluation, and deterministic artifact comparison across historical runs. The evaluation process intentionally avoids LLM-as-a-judge scoring.
+
+![Figure 4: Deterministic evaluation dashboard tracking retrieval, understanding, and resolution quality across historical runs.](docs/images/evaluation-dashboard.png)
+
+*Figure 4. Deterministic evaluation dashboard tracking retrieval, understanding, and resolution quality across historical runs.*
+
+The evaluation pipeline executes the version-controlled golden dataset through the production Conversation Understanding, Retrieval, and Resolution Assistant code paths before comparing the resulting canonical artifacts against curated expectations. This allows prompt and model changes to be evaluated using reproducible engineering metrics rather than subjective LLM-based scoring.
+
+The implementation details for the evaluation framework, golden datasets, observability, and pipeline orchestration are documented in **`docs/IMPLEMENTATION_PLAN.md`**, while the complete production prompts and structured-output contracts are documented in **`docs/PROMPT_LIBRARY.md`**.
 
 ## 7. Future Improvements
 - Tool calling

@@ -24,6 +24,7 @@ def knowledge_documents(structured: StructuredConversation) -> list[KnowledgeDoc
     return [
         KnowledgeDocument(
             issue=issue.canonical_name,
+            customer_description=issue.customer_description,
             product=issue.product,
             symptoms=issue.symptoms,
             resolution_type=resolution.resolution_type,

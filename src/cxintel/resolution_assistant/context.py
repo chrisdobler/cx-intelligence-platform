@@ -26,21 +26,47 @@ _DOWNGRADE_NOTE = (
 )
 
 
+def _clean(value: str | None) -> str:
+    return (value or "").strip()
+
+
+def _section(label: str, value: str) -> str:
+    return f"{label}:\n{value}"
+
+
+def _bullet_section(label: str, values: list[str], *, skip: set[str]) -> str | None:
+    bullets: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = value.strip()
+        if not item or item in seen or item in skip:
+            continue
+        seen.add(item)
+        bullets.append(f"- {item}")
+    if not bullets:
+        return None
+    return f"{label}:\n" + "\n".join(bullets)
+
+
 def render_issue_query(issue: Issue) -> str:
     """Render the retrieval query for one issue.
 
-    Kept symmetric with ``render_knowledge_text`` (same labels and joiners for
+    Kept symmetric with ``render_knowledge_text`` (same labels and layout for
     the fields knowable before resolution) so the query lives in the same
-    embedding space as the documents; the customer's wording is appended as
-    extra semantic signal. Empty sections are omitted.
+    embedding space as the documents. Product remains a deterministic metadata
+    filter rather than standalone embedding text. Empty sections are omitted.
     """
-    lines = [f"Problem: {issue.canonical_name}."]
-    if issue.product:
-        lines.append(f"Product: {issue.product}.")
-    if issue.symptoms:
-        lines.append(f"Symptoms: {'; '.join(issue.symptoms)}.")
-    lines.append(f"Customer description: {issue.customer_description}.")
-    return "\n".join(lines)
+    problem = _clean(issue.canonical_name)
+    customer_description = _clean(issue.customer_description)
+    sections = [_section("Problem", problem)]
+    scalar_values = {problem}
+    if customer_description:
+        sections.append(_section("Customer reported", customer_description))
+        scalar_values.add(customer_description)
+    symptoms = _bullet_section("Symptoms", issue.symptoms, skip=scalar_values)
+    if symptoms:
+        sections.append(symptoms)
+    return "\n\n".join(sections)
 
 
 def build_context(

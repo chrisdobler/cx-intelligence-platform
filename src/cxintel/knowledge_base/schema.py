@@ -16,6 +16,10 @@ class KnowledgeDocument(BaseModel):
     """Reusable operational knowledge distilled from one resolved issue."""
 
     issue: str = Field(description="Canonical issue category name.")
+    customer_description: str = Field(
+        default="",
+        description="The customer's own wording for the problem, preserved verbatim.",
+    )
     product: str = Field(description="The product the issue concerns ('' when unknown).")
     symptoms: list[str] = Field(description="Observable symptoms reported by the customer.")
     prerequisites: list[str] = Field(

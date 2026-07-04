@@ -698,8 +698,9 @@ names remain consistent over time.
 
 ### Preserve customer language
 
-Customer symptoms are still included because they contain natural vocabulary
-that future customer queries are likely to use.
+The customer's original description and reported symptoms are still included
+because they contain natural vocabulary that future customer queries are likely
+to use.
 
 This bridges operational taxonomy with real customer language.
 
@@ -721,8 +722,8 @@ from the stored schema.
 
 ### Exclude deterministic metadata
 
-Metadata such as product, resolution type, and other structured fields are
-available separately for deterministic filtering.
+Metadata such as product and other structured fields are available separately
+for deterministic filtering.
 
 These fields do not need to dominate the embedding representation because they
 are already handled by the retrieval pipeline.
@@ -743,5 +744,6 @@ A rendered representation requires maintaining a rendering template, but it is:
 - versionable
 - optimized specifically for semantic retrieval
 
-Changing the rendering strategy does not require changes to the canonical
-`KnowledgeDocument` schema or downstream retrieval architecture.
+Changing the rendering strategy does not require changes to downstream
+retrieval architecture, though the `KnowledgeDocument` schema may add fields
+when the StructuredConversation already contains useful retrieval signal.

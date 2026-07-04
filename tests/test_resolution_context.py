@@ -50,11 +50,16 @@ def test_query_rendering_is_deterministic_and_symmetric_with_knowledge_text() ->
     query = render_issue_query(issue)
     assert query == render_issue_query(issue)  # deterministic
     assert query.splitlines() == [
-        "Problem: base water leak.",
-        "Product: Pod 5.",
-        "Symptoms: water pooling under the base.",
-        "Customer description: customer says base water leak.",
+        "Problem:",
+        "base water leak",
+        "",
+        "Customer reported:",
+        "customer says base water leak",
+        "",
+        "Symptoms:",
+        "- water pooling under the base",
     ]
+    assert "Product:" not in query
 
 
 def test_query_rendering_omits_empty_sections() -> None:
@@ -62,6 +67,15 @@ def test_query_rendering_omits_empty_sections() -> None:
     query = render_issue_query(issue)
     assert "Product:" not in query
     assert "Symptoms:" not in query
+
+
+def test_query_rendering_trims_and_deduplicates_exact_symptoms() -> None:
+    issue = make_issue(
+        "base water leak",
+        symptoms=["water pooling under the base", " water pooling under the base ", ""],
+    )
+    query = render_issue_query(issue)
+    assert query.splitlines().count("- water pooling under the base") == 1
 
 
 # --- context building ------------------------------------------------------------

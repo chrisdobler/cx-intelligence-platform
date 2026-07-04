@@ -42,7 +42,7 @@ def _bundle() -> ContextBundle:
             )
         ],
         retrieval=RetrievalMetadata(
-            query_text="Problem: base water leak.",
+            query_text="Problem:\nbase water leak",
             product_filter="Pod 5",
             filter_relaxed=False,
             limit=5,
@@ -60,7 +60,7 @@ def test_prompt_embeds_the_bundle_as_json_payload() -> None:
     prompt = build_resolution_prompt(_bundle())
     assert '"doc_id": "KB-1"' in prompt
     assert '"canonical_name": "base water leak"' in prompt
-    assert '"query_text": "Problem: base water leak."' in prompt
+    assert '"query_text": "Problem:\\nbase water leak"' in prompt
 
 
 def test_prompt_states_the_grounding_rules() -> None:
