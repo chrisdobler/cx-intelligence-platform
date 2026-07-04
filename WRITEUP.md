@@ -19,6 +19,8 @@
 - Tradeoffs
 
 ## 4. Part 2 — Resolution Assistant
+- KnowledgeDocument generation
+- Deterministic knowledge synthesis
 - Knowledge base
 - Retrieval strategy
 - Context engineering

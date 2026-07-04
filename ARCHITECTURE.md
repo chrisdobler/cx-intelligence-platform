@@ -205,9 +205,35 @@ concise Slack message (deterministic fallback if the LLM fails), delivered to
 
 ## 5. Knowledge Base
 
-Only resolved conversations become retrieval documents.
+Only resolved issues become retrieval documents.
 
-Embeddings should be generated from normalized conversation summaries rather than raw conversations whenever practical.
+Conversation Understanding already performs semantic interpretation.
+
+Phase 5 deliberately avoids a second LLM call.
+
+Instead:
+
+StructuredConversation
+
+↓
+
+KnowledgeDocument
+
+↓
+
+Deterministic knowledge_text rendering
+
+↓
+
+Embedding
+
+KnowledgeDocument becomes the canonical artifact for retrieval.
+
+Embeddings are generated from knowledge_text rather than raw conversations or
+JSON documents.
+
+Retrieval first applies deterministic metadata filters before semantic vector
+search.
 
 ## 6. Resolution Assistant
 

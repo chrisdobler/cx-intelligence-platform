@@ -565,3 +565,40 @@ However, the architecture remains significantly simpler and more robust.
 
 Performance improvements should occur at the provider execution layer rather
 than by changing the platform's fundamental processing model.
+
+---
+
+# ADR-014 — Deterministic Knowledge Synthesis
+
+## Decision
+
+Generate KnowledgeDocuments deterministically from the StructuredConversation
+rather than invoking a second LLM.
+
+The only AI operation in Phase 5 is embedding generation.
+
+## Reasoning
+
+Conversation Understanding has already performed the expensive semantic
+reasoning required to understand the conversation.
+
+Generating another LLM summary would duplicate work while introducing
+additional latency, cost, and nondeterminism.
+
+Instead, StructuredConversation becomes the canonical source for reusable
+knowledge.
+
+The application renders a deterministic knowledge_text representation suitable
+for embeddings.
+
+## Alternatives Considered
+
+- Second LLM prompt for knowledge synthesis.
+- Embedding raw conversations.
+- Embedding ConversationAnalysis JSON directly.
+
+## Tradeoffs
+
+Template-generated knowledge is slightly less expressive than another LLM
+pass but is perfectly reproducible, easier to test, cheaper to execute, and
+keeps semantic reasoning isolated to Conversation Understanding.
