@@ -51,6 +51,10 @@ Suggested schema:
 {
   "issue": "Pod Overheating",
 
+  "observation_date": "2026-02-26T12:00:00+00:00",
+
+  "baseline_date": "2026-02-25T12:00:00+00:00",
+
   "severity": "critical",
 
   "signals": [
@@ -72,6 +76,20 @@ Suggested schema:
 
 The anomaly object becomes the canonical artifact consumed by Slack alerts,
 reports, dashboards, and future workflows.
+
+---
+
+## Observation Periods
+
+Anomalies represent aggregate operational behavior over an observation period
+rather than an individual conversation.
+
+Observation dates are stored directly on the canonical Anomaly artifact so
+reporting and visualization layers do not need to reconstruct temporal context
+through joins. In Phase 4 v1, `observation_date` and `baseline_date` are
+nullable timestamp anchors populated from the earliest `Conversation.started_at`
+in each aggregation bucket; existing rows may remain null until anomaly
+detection is rerun.
 
 ---
 

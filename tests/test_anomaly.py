@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from cxintel.anomaly.schema import SlackAlert
 from cxintel.anomaly.service import AnomalyService
 from cxintel.llm import LLMExtractionError
-from cxintel.models import ConversationAnalysis, ConversationIssue, IssueCatalogEntry
+from cxintel.models import Anomaly, ConversationAnalysis, ConversationIssue, IssueCatalogEntry
 from cxintel.repositories import AnomalyRepository
 
 from .test_understanding import seed_conversation
@@ -129,6 +129,8 @@ def test_detects_and_persists_anomalies(
     assert leak.metrics["baseline_count"] == 4
     assert leak.metrics["current_count"] == 8
     assert leak.delta == 100.0
+    assert leak.observation_date == datetime(2026, 2, 26, 12, 0, tzinfo=UTC)
+    assert leak.baseline_date == datetime(2026, 2, 25, 12, 0, tzinfo=UTC)
     assert leak.slack_message == "🚨 canned alert"
     assert leak.recommended_action
     novel = next(a for a in rows if a.issue == "ghost noises")
@@ -215,7 +217,36 @@ def test_report_file_written(factory: Any, db_session: Session, tmp_path: Path) 
     assert "# Anomaly Report" in report
     assert "leak" in report and "ghost noises" in report
     assert "volume_spike" in report
+    assert "Observation: 2026-02-26T12:00:00+00:00" in report
+    assert "Baseline: 2026-02-25T12:00:00+00:00" in report
     assert "100%" in report or "100.0" in report or "100" in report
+
+
+def test_report_handles_legacy_null_temporal_fields() -> None:
+    from cxintel.anomaly.reporting import render_report
+
+    report = render_report(
+        [
+            Anomaly(
+                id=uuid.uuid4(),
+                day=2,
+                observation_date=None,
+                baseline_date=None,
+                issue="legacy leak",
+                severity="high",
+                delta=100.0,
+                description="legacy row",
+                slack_message="alert",
+                signals=["volume_spike"],
+                metrics={"baseline_count": 1, "current_count": 2},
+                recommended_action="investigate",
+                created_at=datetime(2026, 7, 3, tzinfo=UTC),
+            )
+        ]
+    )
+
+    assert "Observation: unavailable" in report
+    assert "Baseline: unavailable" in report
 
 
 def test_webhook_delivery_when_configured(
@@ -265,6 +296,8 @@ def test_api_anomalies_endpoint_and_report(
     assert {a["issue"] for a in anomalies} == {"leak", "ghost noises"}
     leak = next(a for a in anomalies if a["issue"] == "leak")
     assert leak["day"] == 2
+    assert leak["observation_date"].startswith("2026-02-26T12:00:00")
+    assert leak["baseline_date"].startswith("2026-02-25T12:00:00")
     assert "volume_spike" in leak["signals"]
     assert leak["metrics"]["current_count"] == 8
     assert leak["summary"]

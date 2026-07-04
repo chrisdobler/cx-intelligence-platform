@@ -458,6 +458,8 @@ def test_anomaly_replace_all_and_for_days(db_session: Session) -> None:
         return Anomaly(
             id=uuid.uuid4(),
             day=day,
+            observation_date=None,
+            baseline_date=None,
             issue=issue,
             severity=severity,
             delta=100.0,

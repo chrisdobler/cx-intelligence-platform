@@ -88,6 +88,12 @@ class ConversationRepository:
             ).scalars()
         )
 
+    def earliest_started_at_for_day(self, day: int) -> datetime | None:
+        """Earliest conversation start in a dataset day bucket."""
+        return self._session.execute(
+            select(func.min(Conversation.started_at)).where(Conversation.day == day)
+        ).scalar_one()
+
     def pending_analysis_ids_for_day(
         self,
         day: int,

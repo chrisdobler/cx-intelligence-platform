@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from cxintel.anomaly.detector import DetectionThresholds, detect
 from cxintel.anomaly.schema import AnomalySignal, CanonicalAnomaly
 from cxintel.repositories import IssueDayStats
@@ -25,6 +27,8 @@ def stats(
 
 
 THRESHOLDS = DetectionThresholds(spike_threshold_pct=50.0, drift_threshold=0.15, min_count=5)
+BASELINE_DATE = datetime(2026, 2, 25, 12, 0, tzinfo=UTC)
+OBSERVATION_DATE = datetime(2026, 2, 26, 12, 0, tzinfo=UTC)
 
 
 def run_detect(
@@ -36,7 +40,15 @@ def run_detect(
 ) -> list[CanonicalAnomaly]:
     if catalog is None:
         catalog = {s.canonical_name for s in baseline}
-    return detect(baseline, current, day=day, catalog_names=catalog, thresholds=THRESHOLDS)
+    return detect(
+        baseline,
+        current,
+        day=day,
+        observation_date=OBSERVATION_DATE,
+        baseline_date=BASELINE_DATE,
+        catalog_names=catalog,
+        thresholds=THRESHOLDS,
+    )
 
 
 # --- volume spike -------------------------------------------------------------
@@ -48,6 +60,8 @@ def test_volume_spike_detected_above_threshold() -> None:
     anomaly = anomalies[0]
     assert anomaly.issue == "leak"
     assert anomaly.day == 2
+    assert anomaly.observation_date == OBSERVATION_DATE
+    assert anomaly.baseline_date == BASELINE_DATE
     assert AnomalySignal.VOLUME_SPIKE in anomaly.signals
     assert anomaly.metrics.baseline_count == 30
     assert anomaly.metrics.current_count == 97

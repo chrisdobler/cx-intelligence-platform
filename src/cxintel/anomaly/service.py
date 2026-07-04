@@ -112,13 +112,22 @@ class AnomalyService:
         result.webhook_configured = bool(self._webhook_url)
 
         with self._session_factory() as session:
-            days = ConversationRepository(session).days()
+            conversations = ConversationRepository(session)
+            days = conversations.days()
             issues = ConversationIssueRepository(session)
             catalog_names = {e.canonical_name for e in IssueCatalogRepository(session).all()}
             baseline_day = days[0] if days else None
             baseline = issues.day_issue_stats(baseline_day) if baseline_day is not None else []
+            baseline_date = (
+                conversations.earliest_started_at_for_day(baseline_day)
+                if baseline_day is not None
+                else None
+            )
             later_days = [d for d in days if baseline_day is not None and d > baseline_day]
             per_day_stats = {day: issues.day_issue_stats(day) for day in later_days}
+            observation_dates = {
+                day: conversations.earliest_started_at_for_day(day) for day in later_days
+            }
 
         comparable_days = [d for d in later_days if per_day_stats[d]]
         if not comparable_days:
@@ -137,6 +146,8 @@ class AnomalyService:
                 baseline,
                 per_day_stats[day],
                 day=day,
+                observation_date=observation_dates.get(day),
+                baseline_date=baseline_date,
                 catalog_names=catalog_names,
                 thresholds=self._thresholds,
             )
@@ -208,6 +219,8 @@ class AnomalyService:
             Anomaly(
                 id=uuid.uuid4(),
                 day=anomaly.day,
+                observation_date=anomaly.observation_date,
+                baseline_date=anomaly.baseline_date,
                 issue=anomaly.issue,
                 severity=anomaly.severity,
                 delta=anomaly.metrics.percent_change or 0.0,

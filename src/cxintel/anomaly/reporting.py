@@ -12,6 +12,12 @@ from datetime import UTC, datetime
 from ..models import Anomaly
 
 
+def _format_timestamp(value: datetime | None) -> str:
+    if value is None:
+        return "unavailable"
+    return value.isoformat(timespec="seconds")
+
+
 def render_report(anomalies: Sequence[Anomaly]) -> str:
     """Render the markdown anomaly report from persisted anomaly rows."""
     lines = [
@@ -37,6 +43,10 @@ def render_report(anomalies: Sequence[Anomaly]) -> str:
             lines += [
                 "",
                 f"### {a.issue}",
+                "",
+                f"Observation: {_format_timestamp(a.observation_date)}",
+                f"Baseline: {_format_timestamp(a.baseline_date)}",
+                f"Signals: {', '.join(a.signals)}",
                 "",
                 a.description,
                 "",

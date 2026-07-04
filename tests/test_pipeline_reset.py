@@ -63,6 +63,8 @@ def _seed_derived_artifacts(session: Session) -> uuid.UUID:
         Anomaly(
             id=uuid.uuid4(),
             day=2,
+            observation_date=None,
+            baseline_date=None,
             issue="reset issue",
             severity="high",
             delta=100.0,

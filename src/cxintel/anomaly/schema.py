@@ -9,6 +9,7 @@ operational data themselves.
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
@@ -43,6 +44,8 @@ class CanonicalAnomaly(BaseModel):
 
     issue: str
     day: int
+    observation_date: datetime | None
+    baseline_date: datetime | None
     severity: AnomalySeverity
     signals: list[AnomalySignal]
     metrics: AnomalyMetrics

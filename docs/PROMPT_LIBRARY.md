@@ -431,8 +431,9 @@ prompt runs — the LLM summarizes findings, it never discovers them.
 
 ### Inputs
 
-One `CanonicalAnomaly` (issue, severity, signals, metrics, summary,
-recommended action), embedded in the prompt as JSON data — payload, not schema.
+One `CanonicalAnomaly` (issue, temporal anchors, severity, signals, metrics,
+summary, recommended action), embedded in the prompt as JSON data — payload,
+not schema.
 
 ### Output Contract
 

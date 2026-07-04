@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 from urllib.parse import urlsplit, urlunsplit
@@ -120,6 +121,8 @@ class AnomalyRecord(BaseModel):
 
     issue: str
     day: int
+    observation_date: datetime | None
+    baseline_date: datetime | None
     severity: str
     signals: list[str]
     metrics: dict[str, float | int | None]
@@ -141,6 +144,8 @@ def _anomaly_rows() -> list[AnomalyRecord]:
         AnomalyRecord(
             issue=a.issue,
             day=a.day,
+            observation_date=a.observation_date,
+            baseline_date=a.baseline_date,
             severity=a.severity,
             signals=a.signals,
             metrics=a.metrics,

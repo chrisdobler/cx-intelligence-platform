@@ -262,6 +262,10 @@ class Anomaly(Base):
     issue: Mapped[str] = mapped_column(String)
     severity: Mapped[str] = mapped_column(String)
     delta: Mapped[float] = mapped_column(Float)  # percent_change (0.0 for novel issues)
+    observation_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    baseline_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     description: Mapped[str] = mapped_column(Text)  # human-readable summary
     slack_message: Mapped[str] = mapped_column(Text)
     signals: Mapped[list[str]] = mapped_column(JSONB)

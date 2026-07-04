@@ -748,6 +748,7 @@ Imported conversations and messages will NOT be modified.`;
     const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
     const fmtSignal = (s) =>
       s.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+    const fmtDateTime = (v) => v ? new Date(v).toLocaleString() : "unavailable";
 
     function trendChartSVG(trends) {
       const { days, series } = trends;
@@ -795,6 +796,8 @@ Imported conversations and messages will NOT be modified.`;
           <div class="m"><div class="k">Day ${a.day}</div><div class="v">${fmtNum(a.metrics.current_count)}</div></div>
           ${delta}
         </div>
+        <div class="anomaly-action"><span class="k">Observation:</span> ${esc(fmtDateTime(a.observation_date))}
+          <span class="k">Baseline:</span> ${esc(fmtDateTime(a.baseline_date))}</div>
         <p class="why">${esc(a.summary)}</p>
         <div class="anomaly-action"><span class="k">Recommended action:</span> ${esc(a.recommended_action)}</div>
       </div>`;

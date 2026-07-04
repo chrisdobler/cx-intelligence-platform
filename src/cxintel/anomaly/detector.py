@@ -9,6 +9,7 @@ everything that fired and the numbers behind it.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from ..repositories import IssueDayStats
 from .schema import AnomalyMetrics, AnomalySeverity, AnomalySignal, CanonicalAnomaly
@@ -104,6 +105,8 @@ def detect(
     current: list[IssueDayStats],
     *,
     day: int,
+    observation_date: datetime | None,
+    baseline_date: datetime | None,
     catalog_names: set[str],
     thresholds: DetectionThresholds,
 ) -> list[CanonicalAnomaly]:
@@ -162,6 +165,8 @@ def detect(
             CanonicalAnomaly(
                 issue=stats.canonical_name,
                 day=day,
+                observation_date=observation_date,
+                baseline_date=baseline_date,
                 severity=severity,
                 signals=signals,
                 metrics=metrics,
