@@ -5,10 +5,10 @@
 
 This write-up focuses on the final architecture and engineering outcomes. Detailed implementation decisions are documented separately:
 
-- Architecture Overview: `ARCHITECTURE.md`
-- Architectural Decision Records (ADRs): `docs/ARCHITECTURE_DECISIONS.md`
-- Implementation Roadmap: `docs/IMPLEMENTATION_PLAN.md`
-- Production Prompt Specifications: `docs/PROMPT_LIBRARY.md`
+- Architecture Overview: [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- Architectural Decision Records (ADRs): [`docs/ARCHITECTURE_DECISIONS.md`](docs/ARCHITECTURE_DECISIONS.md)
+- Implementation Roadmap: [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
+- Production Prompt Specifications: [`docs/PROMPT_LIBRARY.md`](docs/PROMPT_LIBRARY.md)
 
 ## 1. Problem
 Customer support organizations accumulate thousands of conversations, but transforming those conversations into operational intelligence is difficult. Traditional analytics cannot reason over free-form conversations. Purely LLM-driven systems often become opaque pipelines whose outputs are difficult to validate, test, and reuse.
@@ -17,9 +17,9 @@ This project demonstrates a production-oriented architecture that performs seman
 
 ## 2. Overall Architecture
 
-The complete architecture, pipeline descriptions, orchestration model, and technology decisions are documented in `ARCHITECTURE.md`. Figure 1 shows the overall processing flow.
+The complete architecture, pipeline descriptions, orchestration model, and technology decisions are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md). Figure 1 shows the overall processing flow.
 
-![Figure 1: High-level architecture of the Conversation Intelligence Platform.](docs/diagrams/figure-1-overall-architecture.svg)
+[![Figure 1: High-level architecture of the Conversation Intelligence Platform.](docs/diagrams/figure-1-overall-architecture.svg)](docs/diagrams/figure-1-overall-architecture.svg)
 
 *Figure 1. High-level architecture of the Conversation Intelligence Platform.*
 
@@ -27,7 +27,7 @@ The complete architecture, pipeline descriptions, orchestration model, and techn
 
 The pipeline is orchestrated as a sequence of independently executable stages with enforced dependencies, visible progress, and execution metrics. Figure 2 shows the Control Center view used to run stages, monitor completed and remaining work, inspect throughput and retries, and expose operational status. The UI exercises the same orchestration layer as the CLI, so local operation and automated execution share one control path.
 
-![Figure 2: Pipeline Control Center used to orchestrate every stage, monitor progress, and expose operational status.](docs/images/pipeline-control-center.png)
+[![Figure 2: Pipeline Control Center used to orchestrate every stage, monitor progress, and expose operational status.](docs/images/pipeline-control-center.png)](docs/images/pipeline-control-center.png)
 
 *Figure 2. Pipeline Control Center used to orchestrate every stage, monitor progress, and expose operational status.*
 
@@ -100,7 +100,7 @@ This separation keeps anomaly detection explainable, reproducible, independently
 
 Figure 3 shows the deterministic rules engine comparing each day's issue statistics against the Day-1 baseline. The dashboard makes volume spikes, severity drift, novel issues, and other explainable anomalies visible, and the same anomaly artifacts drive Slack alerts and reports.
 
-![Figure 3: Deterministic anomaly detection comparing each day's issue statistics against the Day-1 baseline.](docs/images/anomaly-analysis-dashboard.png)
+[![Figure 3: Deterministic anomaly detection comparing each day's issue statistics against the Day-1 baseline.](docs/images/anomaly-analysis-dashboard.png)](docs/images/anomaly-analysis-dashboard.png)
 
 *Figure 3. Deterministic anomaly detection comparing each day's issue statistics against the Day-1 baseline.*
 
@@ -136,7 +136,7 @@ conversations.
 
 Because every AI stage emits a strongly typed, schema-backed artifact, AI behavior
 is evaluated through deterministic checks (ADR-015). `app evaluate` runs a
-version-controlled golden dataset (`evals/golden/`) through the production
+version-controlled golden dataset ([`evals/golden/`](evals/golden/)) through the production
 Understanding, Retrieval, and Resolution code paths. It compares the resulting
 artifacts field by field: enum and boolean checks, numeric thresholds,
 keyword and citation checks. The process never evaluates free-form prose and
@@ -153,7 +153,7 @@ call.
 
 Figure 4 shows the evaluation dashboard used for historical trend tracking, regression detection, versioned prompt evaluation, and artifact comparison across historical runs. The evaluation process intentionally avoids LLM-as-a-judge scoring.
 
-![Figure 4: Deterministic evaluation dashboard tracking retrieval, understanding, and resolution quality across historical runs.](docs/images/evaluation-dashboard.png)
+[![Figure 4: Deterministic evaluation dashboard tracking retrieval, understanding, and resolution quality across historical runs.](docs/images/evaluation-dashboard.png)](docs/images/evaluation-dashboard.png)
 
 *Figure 4. Deterministic evaluation dashboard tracking retrieval, understanding, and resolution quality across historical runs.*
 
@@ -166,7 +166,7 @@ The Resolution Assistant consumes only the resulting ContextBundle. By separatin
 
 Figure 5 shows the assistant turning filtered semantic retrieval into a grounded recommendation. Citations, evidence strength, and the retrieved historical records remain visible beside the generated response.
 
-![Figure 5: Retrieval-Augmented Resolution Assistant producing grounded recommendations with supporting historical evidence.](docs/images/resolution-assistant.png)
+[![Figure 5: Retrieval-Augmented Resolution Assistant producing grounded recommendations with supporting historical evidence.](docs/images/resolution-assistant.png)](docs/images/resolution-assistant.png)
 
 *Figure 5. Retrieval-Augmented Resolution Assistant producing grounded recommendations with supporting historical evidence.*
 
@@ -202,10 +202,15 @@ verbatim from the Structured Conversation Object; the assistant never
 reinterprets conversations (a new free-text ticket is structured once by the
 existing Prompt #1 and is not persisted).
 
-Additional implementation details, production prompts, architectural decisions, and the phased implementation roadmap are documented in the supporting design documents referenced at the beginning of this write-up.
+Additional implementation details are available in the supporting documentation:
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- [`docs/ARCHITECTURE_DECISIONS.md`](docs/ARCHITECTURE_DECISIONS.md)
+- [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
+- [`docs/PROMPT_LIBRARY.md`](docs/PROMPT_LIBRARY.md)
 
 ## 6. Key Engineering Decisions
-Rather than reproducing every architectural decision, this write-up highlights the decisions that most influenced the final architecture. The complete rationale, alternatives considered, and tradeoffs are documented in `docs/ARCHITECTURE_DECISIONS.md`.
+Rather than reproducing every architectural decision, this write-up highlights the decisions that most influenced the final architecture. The complete rationale, alternatives considered, and tradeoffs are documented in [`docs/ARCHITECTURE_DECISIONS.md`](docs/ARCHITECTURE_DECISIONS.md).
 
 Key decisions include:
 
