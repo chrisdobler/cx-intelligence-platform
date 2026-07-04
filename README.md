@@ -27,7 +27,35 @@ retrieval-augmented generation (RAG).
 - Docker + Docker Compose (for PostgreSQL + pgvector)
 - `make`
 
-## Quickstart
+## Quick Start
+
+The repository includes a **pre-generated AI dataset** so reviewers can
+immediately explore the completed platform without first running the
+expensive Conversation Understanding pipeline.
+
+This allows the following capabilities to be demonstrated immediately:
+
+- Anomaly Detection
+- Knowledge Base
+- Semantic Retrieval
+- Resolution Assistant
+
+The complete AI pipeline remains fully implemented and can be executed at any
+time from the Control Center.
+
+The pre-generated dataset is simply a cached snapshot of the AI-generated
+artifacts (`ConversationAnalysis`, `ConversationIssue`, `IssueCatalog`,
+KnowledgeDocuments`, and related derived data). It exists solely to improve
+the first-run experience by avoiding several hours of processing time and
+significant API cost.
+
+Reviewers therefore have two supported workflows:
+
+1. **Load the pre-generated AI dataset** and immediately explore the platform.
+2. **Run the full pipeline from source data** to regenerate every AI artifact.
+
+Both workflows produce the same downstream architecture; the pre-generated
+dataset is a cache of expensive offline AI work, not a different code path.
 
 ```bash
 make install       # create the venv and install dependencies (uv sync)

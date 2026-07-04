@@ -602,3 +602,146 @@ for embeddings.
 Template-generated knowledge is slightly less expressive than another LLM
 pass but is perfectly reproducible, easier to test, cheaper to execute, and
 keeps semantic reasoning isolated to Conversation Understanding.
+
+---
+
+# ADR-015 — Deterministic Evaluation
+
+## Decision
+
+Evaluate AI behavior using deterministic comparisons against curated
+ground-truth datasets whenever structured outputs make this possible.
+
+Avoid using an LLM as the primary evaluation mechanism.
+
+## Reasoning
+
+The platform already represents every AI stage using strongly typed canonical
+artifacts:
+
+- StructuredConversation
+- ConversationIssue
+- KnowledgeDocument
+- ResolutionResponse
+
+Because these artifacts are deterministic and schema-validated, they can be
+compared directly against expected outputs without requiring another LLM.
+
+This makes evaluation:
+
+- deterministic
+- reproducible
+- inexpensive
+- suitable for continuous integration
+- appropriate for prompt regression testing
+
+LLMs are the system under evaluation, not the evaluation framework.
+
+## Alternatives Considered
+
+### LLM-as-a-Judge
+
+Rejected because:
+
+- evaluation becomes nondeterministic
+- results are difficult to regress across prompt versions
+- evaluation incurs additional API cost
+- explanations become harder to reproduce
+
+LLM-based evaluation may be useful as a secondary qualitative signal, but not
+as the platform's primary correctness metric.
+
+## Tradeoffs
+
+Deterministic evaluation cannot measure every qualitative aspect of AI
+behavior.
+
+However, it provides stable engineering metrics, supports automated
+regression testing, and keeps evaluation independent of another language
+model.
+
+Human review remains appropriate for exploratory prompt development and
+qualitative assessment, while deterministic evaluation serves as the canonical
+engineering validation.
+
+---
+
+# ADR-016 — Embedding Document Rendering Strategy
+
+## Decision
+
+Render each `KnowledgeDocument` into a deterministic, human-readable
+`knowledge_text` representation before generating embeddings.
+
+The rendered document should emphasize the normalized operational issue and the
+historical resolution while preserving customer wording as supporting semantic
+context.
+
+## Reasoning
+
+Embeddings are intended to retrieve historical resolutions for semantically
+similar customer problems.
+
+The rendering therefore reflects the retrieval task rather than the storage
+schema.
+
+The goal is to maximize semantic similarity while remaining deterministic,
+inspectable, and versionable.
+
+### Canonical issue first
+
+The normalized operational issue appears first because it represents the stable
+concept the platform wants to retrieve.
+
+Customer wording varies considerably across conversations, while canonical issue
+names remain consistent over time.
+
+### Preserve customer language
+
+Customer symptoms are still included because they contain natural vocabulary
+that future customer queries are likely to use.
+
+This bridges operational taxonomy with real customer language.
+
+### Resolution before symptoms
+
+The historical resolution appears before the detailed symptom list because the
+primary retrieval objective is to surface successful resolution paths.
+
+Symptoms provide additional matching context after the core operational outcome
+has been established.
+
+### Human-readable rendering
+
+The embedding text is rendered as plain text rather than JSON.
+
+This improves readability during debugging, avoids embedding JSON syntax and
+field names, and provides a stable representation that can evolve independently
+from the stored schema.
+
+### Exclude deterministic metadata
+
+Metadata such as product, resolution type, and other structured fields are
+available separately for deterministic filtering.
+
+These fields do not need to dominate the embedding representation because they
+are already handled by the retrieval pipeline.
+
+## Alternatives Considered
+
+- Embed raw JSON documents.
+- Embed the Pydantic model directly.
+- Generate embedding text using a second LLM prompt.
+
+## Tradeoffs
+
+A rendered representation requires maintaining a rendering template, but it is:
+
+- deterministic
+- inexpensive
+- easily inspectable
+- versionable
+- optimized specifically for semantic retrieval
+
+Changing the rendering strategy does not require changes to the canonical
+`KnowledgeDocument` schema or downstream retrieval architecture.

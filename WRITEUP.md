@@ -12,6 +12,69 @@
 - Final architecture diagram (reference ARCHITECTURE.md)
 - Brief pipeline overview
 
+### Architectural Philosophy
+
+The central architectural principle of the platform is to use LLMs only for
+semantic reasoning and immediately convert their outputs into strongly typed
+canonical artifacts.
+
+Rather than allowing AI-generated text to flow through the system, every major
+AI stage produces a schema-validated Pydantic model (for example,
+StructuredConversation, KnowledgeDocument, or ResolutionResponse).
+
+Once information has crossed the unstructured-to-structured boundary,
+downstream processing becomes conventional software engineering.
+
+Analytics, anomaly detection, knowledge generation, retrieval, orchestration,
+and evaluation all operate deterministically on structured artifacts rather
+than invoking additional LLM reasoning.
+
+This approach improves reproducibility, simplifies testing, enables
+deterministic regression evaluation, and keeps AI isolated to the parts of the
+system that genuinely require semantic understanding.
+
+
+### Validation During Development
+
+One interesting observation during development was that the average number of
+extracted issues per conversation increased substantially across the dataset
+(approximately 1.5 → 2.8 → 3.1 issues per conversation from Day 1 through Day
+3). At first this suggested either taxonomy fragmentation or duplicate issue
+extraction.
+
+Rather than changing the anomaly detection logic immediately, I validated the
+underlying assumptions using deterministic SQL queries against the relational
+projections. By comparing conversation counts, issue counts, and distinct
+conversation/issue pairs, I confirmed that duplicate issue extraction was
+negligible and that the increase reflected the structure of the dataset rather
+than a defect in the parser.
+
+This reinforced an important engineering principle used throughout the
+project: when AI systems produce surprising results, validate the underlying
+data and deterministic pipeline before changing model behavior.
+
+### Taxonomy Quality as a System Property
+
+Reviewing the anomaly output revealed that the quality of anomaly detection is
+ultimately constrained by the quality of the operational taxonomy. The
+multi-signal rules engine correctly identified statistically significant
+changes, but semantically similar customer problems occasionally appeared under
+slightly different canonical issue names (for example, variations of
+temperature-control or water-leak issues).
+
+Rather than adding increasingly complex anomaly heuristics to compensate, I
+kept the detection engine intentionally simple and deterministic. This
+reinforced the architectural separation of concerns: anomaly detection should
+operate over a stable canonical representation, while improvements to
+classification belong upstream in Conversation Understanding.
+
+For a production system, I would evolve this through a dedicated taxonomy
+service, embedding-assisted taxonomy matching, and a human approval workflow
+before new categories become part of the operational catalog. Strengthening the
+canonical representation improves every downstream consumer—including anomaly
+detection, analytics, and retrieval—without increasing the complexity of the
+rules engine.
+
 ## 3. Part 1 — Clustering & Anomaly Detection
 - Approach
 - Design decisions
