@@ -124,6 +124,7 @@
       white-space: nowrap;
     }
     .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.danger { background: var(--red); border-color: var(--red); color: #fff; }
     .btn:disabled { opacity: .55; cursor: default; }
     .stage-card { display: flex; flex-direction: column; gap: 8px; }
     .stage-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(31,42,68,.08); }
@@ -154,6 +155,14 @@
     /* Metrics */
     .metric .value { font-size: 24px; font-weight: 700; }
     .metric .label { color: var(--muted); font-size: 13px; }
+
+    /* Danger zone */
+    .danger-zone { border-color: #fda29b; background: #fffafa; }
+    .danger-zone .danger-copy { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+    .danger-zone .danger-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .danger-zone .danger-msg { color: var(--muted); font-size: 13px; }
+    .danger-zone .danger-msg.ok { color: var(--green); }
+    .danger-zone .danger-msg.err { color: var(--red); }
 
     /* Quick actions */
     .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
@@ -221,6 +230,17 @@
       <div class="card" style="margin-top:12px;">
         <h2 style="margin-bottom:10px;">Recent Runs</h2>
         <div id="recent-runs" class="runs-empty">Loading…</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Danger Zone</h2>
+      <div class="card danger-zone">
+        <p class="danger-copy">Clear AI-generated artifacts so derived stages can be regenerated from preserved imported conversations and messages.</p>
+        <div class="danger-row">
+          <button class="btn danger" id="reset-derived">Reset Derived Data</button>
+          <span class="danger-msg" id="reset-derived-msg"></span>
+        </div>
       </div>
     </section>
 
@@ -500,10 +520,51 @@
     document.getElementById("run-remaining").addEventListener("click", () =>
       postRun("/api/pipeline/run"));
 
+    async function resetDerivedData() {
+      const message = `This will permanently delete all AI-generated artifacts.
+
+The following tables will be cleared:
+
+• conversation_analyses
+• conversation_issues
+• issue_catalog
+• anomalies
+
+Imported conversations and messages will NOT be modified.`;
+      if (!window.confirm(message)) return;
+
+      const button = document.getElementById("reset-derived");
+      const msg = document.getElementById("reset-derived-msg");
+      button.disabled = true;
+      msg.className = "danger-msg";
+      msg.textContent = "Resetting…";
+      try {
+        const res = await fetch("/api/pipeline/reset-derived", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          msg.className = "danger-msg err";
+          msg.textContent = typeof data.detail === "string"
+            ? data.detail : `Could not reset (${res.status}).`;
+          return;
+        }
+        msg.className = "danger-msg ok";
+        msg.textContent = "Derived AI artifacts reset.";
+        await load();
+      } catch (e) {
+        msg.className = "danger-msg err";
+        msg.textContent = "Could not reach the API.";
+      } finally {
+        button.disabled = false;
+      }
+    }
+    document.getElementById("reset-derived").addEventListener("click", resetDerivedData);
+
     function renderMetrics(m) {
       const rows = [
         ["Imported conversations", m.imported_conversations],
         ["Processed conversations", m.processed_conversations],
+        ["Conversation issues", m.conversation_issue_count],
+        ["Issue catalog entries", m.issue_catalog_count],
         ["Embeddings", m.embedding_count],
         ["Anomalies", m.anomaly_count],
       ];

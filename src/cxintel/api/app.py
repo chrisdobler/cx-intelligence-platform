@@ -23,7 +23,7 @@ from .. import __version__
 from ..config import get_settings, set_env_key
 from ..db import check_health
 from ..pipeline import orchestrator
-from ..pipeline.jobs import TRACKER, Job, JobBusyError
+from ..pipeline.jobs import TRACKER, Job, JobBusyError, JobState
 from ..pipeline.orchestrator import (
     LLMObservationRecord,
     RunRecord,
@@ -32,6 +32,7 @@ from ..pipeline.orchestrator import (
     run_remaining,
     run_stage,
 )
+from ..pipeline.reset import reset_derived_data
 from ..pipeline.stages import StageKind
 from .status import PlatformStatus, build_status
 
@@ -226,6 +227,16 @@ def run_remaining_pipeline() -> Job:
         return TRACKER.start("pipeline", run_remaining)
     except JobBusyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/pipeline/reset-derived")
+def reset_derived_pipeline_data() -> PlatformStatus:
+    """Clear regenerable AI artifacts while preserving imported source data."""
+    current = TRACKER.current()
+    if current is not None and current.state is JobState.RUNNING:
+        raise HTTPException(status_code=409, detail=f"'{current.target}' is still running.")
+    reset_derived_data(trigger="api")
+    return build_status()
 
 
 class GoogleKeyRequest(BaseModel):

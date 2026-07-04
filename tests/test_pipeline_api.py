@@ -12,8 +12,17 @@ from fastapi.testclient import TestClient
 
 from cxintel.api.app import app
 from cxintel.pipeline.jobs import JobTracker
+from cxintel.repositories import (
+    AnomalyRepository,
+    ConversationAnalysisRepository,
+    ConversationIssueRepository,
+    ConversationRepository,
+    IssueCatalogRepository,
+    MessageRepository,
+)
 
 from .test_ingestion import make_record
+from .test_pipeline_reset import _seed_derived_artifacts
 
 client = TestClient(app)
 
@@ -95,6 +104,56 @@ def test_run_returns_409_when_busy(
     monkeypatch.setattr(_fresh_tracker, "_spawn", lambda fn: None)
     _fresh_tracker.start("pipeline", lambda progress: "never")
     assert client.post("/api/pipeline/run").status_code == 409
+
+
+def test_reset_derived_endpoint_returns_fresh_status(
+    settings_on_test_db: str, db_session: Any
+) -> None:
+    _seed_derived_artifacts(db_session)
+
+    before = client.get("/api/status").json()
+    assert before["metrics"]["imported_conversations"] == 1
+    assert before["metrics"]["processed_conversations"] == 1
+    assert before["metrics"]["conversation_issue_count"] == 1
+    assert before["metrics"]["issue_catalog_count"] == 1
+    assert before["metrics"]["anomaly_count"] == 1
+    assert next(s for s in before["pipeline"] if s["key"] == "ingest")["complete"] is True
+    assert next(s for s in before["pipeline"] if s["key"] == "understand")["complete"] is True
+    assert next(s for s in before["pipeline"] if s["key"] == "anomaly")["complete"] is True
+
+    response = client.post("/api/pipeline/reset-derived")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    assert ConversationRepository(db_session).count() == 1
+    assert MessageRepository(db_session).count() == 1
+    assert ConversationAnalysisRepository(db_session).count() == 0
+    assert ConversationIssueRepository(db_session).count() == 0
+    assert IssueCatalogRepository(db_session).count() == 0
+    assert AnomalyRepository(db_session).count() == 0
+    assert payload["metrics"]["imported_conversations"] == 1
+    assert payload["metrics"]["processed_conversations"] == 0
+    assert payload["metrics"]["conversation_issue_count"] == 0
+    assert payload["metrics"]["issue_catalog_count"] == 0
+    assert payload["metrics"]["anomaly_count"] == 0
+    assert next(s for s in payload["pipeline"] if s["key"] == "ingest")["complete"] is True
+    assert next(s for s in payload["pipeline"] if s["key"] == "understand")["complete"] is False
+    assert next(s for s in payload["pipeline"] if s["key"] == "anomaly")["complete"] is False
+
+    runs = client.get("/api/pipeline/runs").json()
+    assert runs[0]["stage_key"] == "reset_derived"
+    assert runs[0]["stage_label"] == "Reset Derived Data"
+    assert runs[0]["status"] == "succeeded"
+
+
+def test_reset_derived_endpoint_returns_409_when_busy(
+    monkeypatch: pytest.MonkeyPatch, _fresh_tracker: JobTracker
+) -> None:
+    monkeypatch.setattr(_fresh_tracker, "_spawn", lambda fn: None)
+    _fresh_tracker.start("pipeline", lambda progress: "never")
+    response = client.post("/api/pipeline/reset-derived")
+    assert response.status_code == 409
+    assert "still running" in response.json()["detail"]
 
 
 def test_run_ingest_end_to_end(

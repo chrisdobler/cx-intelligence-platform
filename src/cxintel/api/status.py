@@ -74,6 +74,8 @@ class Metrics(BaseModel):
 
     imported_conversations: int | None = None  # Phase 2
     processed_conversations: int | None = None  # Phase 3
+    conversation_issue_count: int | None = None  # Phase 3 projection
+    issue_catalog_count: int | None = None  # Phase 3 Day-1 catalog
     embedding_count: int | None = None  # Phase 5
     anomaly_count: int | None = None  # Phase 4
 
@@ -107,7 +109,9 @@ def _ingest_metrics() -> Metrics:
     from ..repositories import (
         AnomalyRepository,
         ConversationAnalysisRepository,
+        ConversationIssueRepository,
         ConversationRepository,
+        IssueCatalogRepository,
     )
 
     try:
@@ -115,6 +119,8 @@ def _ingest_metrics() -> Metrics:
             return Metrics(
                 imported_conversations=ConversationRepository(session).count(),
                 processed_conversations=ConversationAnalysisRepository(session).count(),
+                conversation_issue_count=ConversationIssueRepository(session).count(),
+                issue_catalog_count=IssueCatalogRepository(session).count(),
                 anomaly_count=AnomalyRepository(session).count(),
             )
     except Exception:

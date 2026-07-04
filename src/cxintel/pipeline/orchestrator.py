@@ -266,6 +266,10 @@ def recent_runs(limit: int = 20) -> list[RunRecord]:
         session.close()
 
     def label(key: str) -> str:
+        from .reset import RESET_DERIVED_STAGE_KEY
+
+        if key == RESET_DERIVED_STAGE_KEY:
+            return "Reset Derived Data"
         try:
             return get_stage(key).label
         except KeyError:
