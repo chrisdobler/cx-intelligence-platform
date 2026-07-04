@@ -23,6 +23,7 @@ from .models import (
     Conversation,
     ConversationAnalysis,
     ConversationIssue,
+    ConversationUnderstandingFailure,
     IssueCatalogEntry,
     LLMCallObservation,
     Message,
@@ -86,8 +87,14 @@ class ConversationRepository:
             ).scalars()
         )
 
-    def pending_analysis_ids_for_day(self, day: int, limit: int | None = None) -> list[uuid.UUID]:
-        """Conversations on a day that have no analysis yet (resumable runs)."""
+    def pending_analysis_ids_for_day(
+        self,
+        day: int,
+        limit: int | None = None,
+        *,
+        include_terminal_failures: bool = False,
+    ) -> list[uuid.UUID]:
+        """Conversations on a day still eligible for understanding."""
         stmt = (
             select(Conversation.id)
             .outerjoin(
@@ -98,6 +105,37 @@ class ConversationRepository:
             .where(ConversationAnalysis.conversation_id.is_(None))
             .order_by(Conversation.started_at, Conversation.id)
         )
+        if not include_terminal_failures:
+            stmt = stmt.outerjoin(
+                ConversationUnderstandingFailure,
+                ConversationUnderstandingFailure.conversation_id == Conversation.id,
+            ).where(ConversationUnderstandingFailure.conversation_id.is_(None))
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return list(self._session.execute(stmt).scalars())
+
+    def terminal_failure_ids_for_day(
+        self, day: int, limit: int | None = None
+    ) -> list[uuid.UUID]:
+        """Terminal-failed conversations that can be retried explicitly."""
+        stmt = (
+            select(Conversation.id)
+            .join(
+                ConversationUnderstandingFailure,
+                ConversationUnderstandingFailure.conversation_id == Conversation.id,
+            )
+            .outerjoin(
+                ConversationAnalysis,
+                ConversationAnalysis.conversation_id == Conversation.id,
+            )
+            .where(Conversation.day == day)
+            .where(ConversationAnalysis.conversation_id.is_(None))
+            .order_by(
+                ConversationUnderstandingFailure.last_failed_at,
+                Conversation.started_at,
+                Conversation.id,
+            )
+        )
         if limit is not None:
             stmt = stmt.limit(limit)
         return list(self._session.execute(stmt).scalars())
@@ -105,6 +143,33 @@ class ConversationRepository:
     def count_for_day(self, day: int) -> int:
         return self._session.execute(
             select(func.count()).select_from(Conversation).where(Conversation.day == day)
+        ).scalar_one()
+
+    def analyzed_count_for_day(self, day: int) -> int:
+        return self._session.execute(
+            select(func.count())
+            .select_from(Conversation)
+            .join(
+                ConversationAnalysis,
+                ConversationAnalysis.conversation_id == Conversation.id,
+            )
+            .where(Conversation.day == day)
+        ).scalar_one()
+
+    def terminal_failure_count_for_day(self, day: int) -> int:
+        return self._session.execute(
+            select(func.count())
+            .select_from(Conversation)
+            .join(
+                ConversationUnderstandingFailure,
+                ConversationUnderstandingFailure.conversation_id == Conversation.id,
+            )
+            .outerjoin(
+                ConversationAnalysis,
+                ConversationAnalysis.conversation_id == Conversation.id,
+            )
+            .where(Conversation.day == day)
+            .where(ConversationAnalysis.conversation_id.is_(None))
         ).scalar_one()
 
 
@@ -145,6 +210,68 @@ class ConversationAnalysisRepository:
 
     def get(self, conversation_id: uuid.UUID) -> ConversationAnalysis | None:
         return self._session.get(ConversationAnalysis, conversation_id)
+
+
+class ConversationUnderstandingFailureRepository:
+    """Persistence for terminal Conversation Understanding failures."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def get(self, conversation_id: uuid.UUID) -> ConversationUnderstandingFailure | None:
+        return self._session.get(ConversationUnderstandingFailure, conversation_id)
+
+    def count(self) -> int:
+        return self._session.execute(
+            select(func.count()).select_from(ConversationUnderstandingFailure)
+        ).scalar_one()
+
+    def upsert(
+        self,
+        *,
+        conversation_id: uuid.UUID,
+        pipeline_run_id: uuid.UUID | None,
+        day: int,
+        model: str,
+        prompt_version: str,
+        status: str,
+        failure_category: str,
+        error: str,
+        retry_count: int,
+        failed_at: datetime,
+    ) -> None:
+        existing = self.get(conversation_id)
+        if existing is None:
+            self._session.add(
+                ConversationUnderstandingFailure(
+                    conversation_id=conversation_id,
+                    pipeline_run_id=pipeline_run_id,
+                    day=day,
+                    model=model,
+                    prompt_version=prompt_version,
+                    status=status,
+                    failure_category=failure_category,
+                    error=error,
+                    retry_count=retry_count,
+                    first_failed_at=failed_at,
+                    last_failed_at=failed_at,
+                )
+            )
+            return
+        existing.pipeline_run_id = pipeline_run_id
+        existing.day = day
+        existing.model = model
+        existing.prompt_version = prompt_version
+        existing.status = status
+        existing.failure_category = failure_category
+        existing.error = error
+        existing.retry_count = retry_count
+        existing.last_failed_at = failed_at
+
+    def clear(self, conversation_id: uuid.UUID) -> None:
+        self._session.query(ConversationUnderstandingFailure).filter(
+            ConversationUnderstandingFailure.conversation_id == conversation_id
+        ).delete()
 
 
 class IssueAggregate:

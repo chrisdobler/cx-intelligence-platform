@@ -10,10 +10,9 @@ pool bounds wall-clock time — outputs are identical to sequential processing,
 only the order of API calls differs.
 
 Runs are resumable and idempotent: conversations that already have an
-analysis are skipped, so a sample run followed by a full run (or an
-interrupted full run) simply continues where it left off. A conversation
-whose extraction fails is recorded and skipped — invalid data is never
-persisted (nothing is written for it at all).
+analysis are skipped, and conversations with terminal recorded failures are
+skipped until an explicit retry-failures run. Exhausted transient failures
+remain pending for a later run. Invalid data is never persisted.
 """
 
 from __future__ import annotations
@@ -40,6 +39,7 @@ from ..pipeline.progress import ProgressCallback, ProgressReporter
 from ..repositories import (
     ConversationIssueRepository,
     ConversationRepository,
+    ConversationUnderstandingFailureRepository,
     IssueCatalogRepository,
     LLMCallObservationRepository,
 )
@@ -61,7 +61,10 @@ class UnderstandingResult:
     def __init__(self) -> None:
         self.analyzed = 0
         self.skipped_existing = 0
+        self.skipped_terminal_failures = 0
         self.failed = 0
+        self.retryable_failed = 0
+        self.permanent_failed = 0
         self.catalog_entries: int | None = None
         self.observed_calls = 0
         self.total_seconds = 0.0
@@ -71,9 +74,15 @@ class UnderstandingResult:
         self.slowest_seconds = 0.0
 
     def summary(self) -> str:
+        failure_parts = [
+            f"{self.retryable_failed} retryable",
+            f"{self.permanent_failed} permanent",
+        ]
         parts = [
             f"Analyzed {self.analyzed} conversations "
-            f"({self.failed} failed, {self.skipped_existing} already analyzed)."
+            f"({self.failed} failed: {', '.join(failure_parts)}; "
+            f"{self.skipped_existing} already analyzed; "
+            f"{self.skipped_terminal_failures} terminal failures skipped)."
         ]
         if self.observed_calls:
             avg_total = self.total_seconds / self.observed_calls
@@ -135,6 +144,8 @@ class UnderstandingService:
         self,
         limit: int | None = None,
         progress: ProgressCallback | ProgressReporter = _noop_progress,
+        *,
+        retry_failures: bool = False,
     ) -> UnderstandingResult:
         """Process pending conversations day by day (day boundaries are barriers)."""
         reporter = (
@@ -152,14 +163,21 @@ class UnderstandingService:
         with self._session_factory() as session:
             conversations = ConversationRepository(session)
             days = conversations.days()
-            total_work = self._pending_work_count(conversations, days, limit)
+            total_work = self._pending_work_count(
+                conversations, days, limit, retry_failures=retry_failures
+            )
 
         reporter.report(
             total_work=total_work,
             completed_work=0,
+            succeeded_work=0,
             message=(
-                f"Understanding {total_work} pending conversations…"
+                f"Retrying {total_work} failed conversations…"
+                if retry_failures and total_work
+                else f"Understanding {total_work} pending conversations…"
                 if total_work
+                else "No recorded failures to retry."
+                if retry_failures
                 else "No pending conversations to understand."
             ),
         )
@@ -168,7 +186,9 @@ class UnderstandingService:
         for day in days:
             if remaining is not None and remaining <= 0:
                 break
-            processed = self._run_day(day, remaining, result, reporter)
+            processed = self._run_day(
+                day, remaining, result, reporter, retry_failures=retry_failures
+            )
             if remaining is not None:
                 remaining -= processed
 
@@ -176,14 +196,23 @@ class UnderstandingService:
         return result
 
     def _pending_work_count(
-        self, conversations: ConversationRepository, days: list[int], limit: int | None
+        self,
+        conversations: ConversationRepository,
+        days: list[int],
+        limit: int | None,
+        *,
+        retry_failures: bool,
     ) -> int:
         remaining = limit
         total = 0
         for day in days:
             if remaining is not None and remaining <= 0:
                 break
-            pending = conversations.pending_analysis_ids_for_day(day, remaining)
+            pending = (
+                conversations.terminal_failure_ids_for_day(day, remaining)
+                if retry_failures
+                else conversations.pending_analysis_ids_for_day(day, remaining)
+            )
             total += len(pending)
             if remaining is not None:
                 remaining -= len(pending)
@@ -197,14 +226,21 @@ class UnderstandingService:
         limit: int | None,
         result: UnderstandingResult,
         reporter: ProgressReporter,
+        *,
+        retry_failures: bool,
     ) -> int:
         with self._session_factory() as session:
             conversations = ConversationRepository(session)
-            total_for_day = conversations.count_for_day(day)
-            pending = conversations.pending_analysis_ids_for_day(day, limit)
-            result.skipped_existing += total_for_day - len(
-                conversations.pending_analysis_ids_for_day(day)
+            pending = (
+                conversations.terminal_failure_ids_for_day(day, limit)
+                if retry_failures
+                else conversations.pending_analysis_ids_for_day(day, limit)
             )
+            result.skipped_existing += conversations.analyzed_count_for_day(day)
+            if not retry_failures:
+                result.skipped_terminal_failures += conversations.terminal_failure_count_for_day(
+                    day
+                )
             catalog = IssueCatalogRepository(session).all() if day > 1 else []
             catalog_context = [(e.canonical_name, e.description) for e in catalog]
 
@@ -227,6 +263,10 @@ class UnderstandingService:
                 failed = True
                 with self._counter_lock:
                     result.failed += 1
+                    if exc.retryable:
+                        result.retryable_failed += 1
+                    else:
+                        result.permanent_failed += 1
             with self._counter_lock:
                 done += 1
                 day_done = done
@@ -356,6 +396,7 @@ class UnderstandingService:
                         for issue in analysis.issues
                     ],
                 )
+                ConversationUnderstandingFailureRepository(session).clear(conversation_id)
                 session.commit()
                 persist_seconds = time.perf_counter() - phase_started
         except Exception as exc:
@@ -363,6 +404,15 @@ class UnderstandingService:
             error = str(exc)
             if llm_seconds == 0.0:
                 llm_seconds = time.perf_counter() - phase_started
+            if isinstance(exc, LLMExtractionError) and not exc.retryable:
+                self._record_terminal_failure(
+                    conversation_id=conversation_id,
+                    day=day,
+                    category=exc.category,
+                    error=str(exc),
+                    retry_count=retry_count,
+                    failed_at=datetime.now(tz=UTC),
+                )
             raise
         finally:
             total_seconds = time.perf_counter() - observation_started
@@ -413,6 +463,39 @@ class UnderstandingService:
                 exc,
             )
 
+    def _record_terminal_failure(
+        self,
+        *,
+        conversation_id: uuid.UUID,
+        day: int,
+        category: str,
+        error: str,
+        retry_count: int,
+        failed_at: datetime,
+    ) -> None:
+        """Persist permanent failures so normal reruns can resume missing work."""
+        try:
+            with self._session_factory() as session:
+                ConversationUnderstandingFailureRepository(session).upsert(
+                    conversation_id=conversation_id,
+                    pipeline_run_id=self._pipeline_run_id,
+                    day=day,
+                    model=self._model,
+                    prompt_version=PROMPT_VERSION,
+                    status="terminal",
+                    failure_category=category,
+                    error=error,
+                    retry_count=retry_count,
+                    failed_at=failed_at,
+                )
+                session.commit()
+        except Exception as exc:
+            logger.warning(
+                "failed to record terminal understanding failure for %s: %s",
+                conversation_id,
+                exc,
+            )
+
     # -- baseline catalog -----------------------------------------------------
 
     def _maybe_build_catalog(
@@ -424,7 +507,9 @@ class UnderstandingService:
         baseline_day = days[0]
         with self._session_factory() as session:
             conversations = ConversationRepository(session)
-            if conversations.pending_analysis_ids_for_day(baseline_day, limit=1):
+            if conversations.pending_analysis_ids_for_day(
+                baseline_day, limit=1, include_terminal_failures=True
+            ):
                 return  # baseline incomplete — catalog not built yet
             issues = ConversationIssueRepository(session)
             now = datetime.now(tz=UTC)

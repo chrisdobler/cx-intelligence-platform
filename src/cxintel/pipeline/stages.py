@@ -230,6 +230,7 @@ class UnderstandStage(PipelineStage):
     run_options = (
         RunOption(value="sample", label="Run Sample (100)"),
         RunOption(value="full", label="Run Full Dataset"),
+        RunOption(value="retry_failures", label="Retry Recorded Failures"),
     )
 
     def is_complete(self, session: Session | None) -> bool:
@@ -265,6 +266,7 @@ class UnderstandStage(PipelineStage):
         from ..understanding.service import UnderstandingService
 
         settings = get_settings()
+        retry_failures = option == "retry_failures"
         limit = settings.understand_sample_size if option in (None, "sample") else None
         if settings.understand_limit is not None:
             limit = settings.understand_limit  # explicit env override wins
@@ -277,10 +279,18 @@ class UnderstandStage(PipelineStage):
         )
         command.upgrade(Config("alembic.ini"), "head")
 
-        scope = "full dataset" if limit is None else f"sample of {limit}"
+        scope = (
+            "recorded failures"
+            if retry_failures
+            else "full dataset"
+            if limit is None
+            else f"sample of {limit}"
+        )
         reporter.report(message=f"Running conversation understanding ({scope})…")
         service = UnderstandingService(session_factory, get_llm_provider(), pipeline_run_id=run_id)
-        return service.run(limit=limit, progress=reporter).summary()
+        return service.run(
+            limit=limit, progress=reporter, retry_failures=retry_failures
+        ).summary()
 
 
 class KnowledgeBaseStage(PipelineStage):

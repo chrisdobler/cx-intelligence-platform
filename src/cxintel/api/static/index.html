@@ -445,6 +445,9 @@
       const work = detail.total_work
         ? `${fmtNum(detail.completed_work)} / ${fmtNum(detail.total_work)}`
         : "preparing";
+      const succeeded = detail.total_work
+        ? `${fmtNum(detail.succeeded_work ?? 0)} / ${fmtNum(detail.total_work)}`
+        : "—";
       el.className = "progress-panel active";
       el.innerHTML = `
         <div class="progress-top">
@@ -457,6 +460,8 @@
         <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
         <div class="progress-stats">
           <div class="progress-stat"><div class="k">Work</div><div class="v">${work}</div></div>
+          <div class="progress-stat"><div class="k">Succeeded</div><div class="v">${succeeded}</div></div>
+          <div class="progress-stat"><div class="k">Remaining</div><div class="v">${fmtNum(detail.remaining_work ?? 0)}</div></div>
           <div class="progress-stat"><div class="k">Elapsed</div><div class="v">${fmtDuration(detail.elapsed_seconds)}</div></div>
           <div class="progress-stat"><div class="k">ETA</div><div class="v">${fmtDuration(detail.estimated_remaining_seconds)}</div></div>
           <div class="progress-stat"><div class="k">Throughput</div><div class="v">${fmtRate(detail.throughput_conversations_per_second)}</div></div>

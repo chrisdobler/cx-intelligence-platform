@@ -8,16 +8,18 @@ skipped and the rest of the suite still passes.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ADMIN_URL = "postgresql+psycopg://cx:cx@localhost:5432/cx"
-_TEST_DB = "cx_test"
+_TEST_DB = f"cx_test_{os.getpid()}"
 _TEST_URL = f"postgresql+psycopg://cx:cx@localhost:5432/{_TEST_DB}"
 
 
@@ -74,14 +76,26 @@ def db_session(migrated_engine: Engine) -> Iterator[Session]:
     factory = sessionmaker(bind=migrated_engine, expire_on_commit=False)
     session = factory()
     yield session
-    session.rollback()
-    session.close()
-    with migrated_engine.connect() as conn:
-        conn.execute(
-            text(
-                "truncate conversations, messages, conversation_analyses,"
-                " conversation_issues, issue_catalog, anomalies, pipeline_runs,"
-                " llm_call_observations cascade"
-            )
-        )
-        conn.commit()
+    try:
+        session.rollback()
+    except OperationalError:
+        pass
+    finally:
+        session.close()
+    try:
+        with migrated_engine.connect() as conn:
+            for table in (
+                "conversation_understanding_failures",
+                "llm_call_observations",
+                "conversation_issues",
+                "issue_catalog",
+                "anomalies",
+                "conversation_analyses",
+                "pipeline_runs",
+                "messages",
+                "conversations",
+            ):
+                conn.execute(text(f"delete from {table}"))
+            conn.commit()
+    except OperationalError:
+        pass

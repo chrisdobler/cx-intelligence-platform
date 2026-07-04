@@ -65,7 +65,11 @@ def test_status_includes_stage_cards_and_job() -> None:
     understand = next(s for s in stages if s["key"] == "understand")
     assert understand["implemented"] is True
     assert understand["planned_phase"] is None
-    assert [o["value"] for o in understand["run_options"]] == ["sample", "full"]
+    assert [o["value"] for o in understand["run_options"]] == [
+        "sample",
+        "full",
+        "retry_failures",
+    ]
     chat = next(s for s in stages if s["key"] == "resolution_assistant")
     assert chat["action"] == "open"
 
@@ -182,6 +186,8 @@ def test_run_ingest_end_to_end(
     assert progress["stage_key"] == "ingest"
     assert progress["total_work"] == 1
     assert progress["completed_work"] == 1
+    assert progress["succeeded_work"] == 1
+    assert progress["remaining_work"] == 0
     assert progress["percentage"] == 100
     assert progress["current_item"] == "conv_0001"
     ingest = next(s for s in payload["pipeline"] if s["key"] == "ingest")
@@ -253,6 +259,8 @@ def test_run_understand_sample_end_to_end(
     assert progress["stage_key"] == "understand"
     assert progress["total_work"] == 1
     assert progress["completed_work"] == 1
+    assert progress["succeeded_work"] == 1
+    assert progress["remaining_work"] == 0
     assert progress["percentage"] == 100
     assert progress["failure_count"] == 0
     understand = next(s for s in payload["pipeline"] if s["key"] == "understand")

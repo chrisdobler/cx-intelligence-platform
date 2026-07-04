@@ -13,9 +13,12 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Callable
+from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol, TypeVar
 
+import httpx
 from pydantic import BaseModel, ValidationError
+from requests import exceptions as requests_exceptions
 
 if TYPE_CHECKING:
     from google.genai import Client
@@ -30,6 +33,65 @@ _TRANSIENT_CODES = {429, 500, 503}
 
 class LLMExtractionError(Exception):
     """Raised when a provider cannot produce a valid structured response."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        category: str = "permanent",
+        attempts: int = 0,
+    ) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+        self.category = category
+        self.attempts = attempts
+
+
+class LLMFailureCategory(StrEnum):
+    """Stable categories callers can use for persistence/resume decisions."""
+
+    VALIDATION = "validation"
+    PERMANENT_API = "permanent_api"
+    TRANSIENT_API = "transient_api"
+    TRANSPORT = "transport"
+    CONFIGURATION = "configuration"
+
+
+class PermanentLLMExtractionError(LLMExtractionError):
+    """Raised for failures normal reruns should not keep retrying."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: LLMFailureCategory | str = LLMFailureCategory.PERMANENT_API,
+        attempts: int = 0,
+    ) -> None:
+        super().__init__(
+            message,
+            retryable=False,
+            category=str(category),
+            attempts=attempts,
+        )
+
+
+class RetryableLLMExtractionError(LLMExtractionError):
+    """Raised after a bounded transient retry budget is exhausted."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: LLMFailureCategory | str = LLMFailureCategory.TRANSIENT_API,
+        attempts: int = 0,
+    ) -> None:
+        super().__init__(
+            message,
+            retryable=True,
+            category=str(category),
+            attempts=attempts,
+        )
 
 
 class LLMProvider(Protocol):
@@ -52,6 +114,17 @@ def _suggested_delay(error: Exception) -> float | None:
     return min(float(match.group(1)), _MAX_RETRY_SLEEP) if match else None
 
 
+def _is_transport_error(error: Exception) -> bool:
+    """SDK transport failures that are safe to retry with bounded backoff."""
+    return isinstance(
+        error,
+        (
+            httpx.TransportError,
+            requests_exceptions.RequestException,
+        ),
+    )
+
+
 class GoogleProvider:
     """Google AI Studio (Gemini) provider using native structured output.
 
@@ -63,7 +136,8 @@ class GoogleProvider:
     budget (``_MAX_TRANSIENT_ATTEMPTS``) and honour the server's suggested
     retry delay when present (free-tier rate limits say 'retry in Xs' —
     sleeping less than that just burns attempts), falling back to exponential
-    backoff.
+    backoff. Transport errors from the SDK's HTTP layer share that transient
+    budget.
     """
 
     def __init__(self, client: Client, model: str, backoff_seconds: float = 2.0) -> None:
@@ -97,7 +171,11 @@ class GoogleProvider:
                     on_retry(validation_failures + 1, exc)
             except errors.APIError as exc:
                 if exc.code not in _TRANSIENT_CODES:
-                    raise LLMExtractionError(f"Google AI request failed: {exc}") from exc
+                    raise PermanentLLMExtractionError(
+                        f"Google AI request failed: {exc}",
+                        category=LLMFailureCategory.PERMANENT_API,
+                        attempts=validation_failures + transient_failures + 1,
+                    ) from exc
                 last_error = exc
                 transient_failures += 1
                 if transient_failures < _MAX_TRANSIENT_ATTEMPTS:
@@ -107,9 +185,31 @@ class GoogleProvider:
                     if delay is None:
                         delay = self._backoff_seconds * (2 ** (transient_failures - 1))
                     time.sleep(delay)
+            except Exception as exc:
+                if not _is_transport_error(exc):
+                    raise
+                last_error = exc
+                transient_failures += 1
+                if transient_failures < _MAX_TRANSIENT_ATTEMPTS:
+                    if on_retry is not None:
+                        on_retry(transient_failures + 1, exc)
+                    time.sleep(self._backoff_seconds * (2 ** (transient_failures - 1)))
         attempts = validation_failures + transient_failures
-        raise LLMExtractionError(
-            f"No valid {schema.__name__} after {attempts} attempts: {last_error}"
+        if transient_failures >= _MAX_TRANSIENT_ATTEMPTS:
+            category = (
+                LLMFailureCategory.TRANSPORT
+                if last_error is not None and _is_transport_error(last_error)
+                else LLMFailureCategory.TRANSIENT_API
+            )
+            raise RetryableLLMExtractionError(
+                f"No valid {schema.__name__} after {attempts} attempts: {last_error}",
+                category=category,
+                attempts=attempts,
+            ) from last_error
+        raise PermanentLLMExtractionError(
+            f"No valid {schema.__name__} after {attempts} attempts: {last_error}",
+            category=LLMFailureCategory.VALIDATION,
+            attempts=attempts,
         ) from last_error
 
 
@@ -119,10 +219,14 @@ def get_llm_provider() -> LLMProvider:
 
     settings = get_settings()
     if settings.llm_provider != "google":
-        raise LLMExtractionError(f"Unsupported LLM provider '{settings.llm_provider}'.")
+        raise PermanentLLMExtractionError(
+            f"Unsupported LLM provider '{settings.llm_provider}'.",
+            category=LLMFailureCategory.CONFIGURATION,
+        )
     if not settings.ai_configured:
-        raise LLMExtractionError(
-            "Google AI is not configured — set GOOGLE_API_KEY (see the AI Capabilities card)."
+        raise PermanentLLMExtractionError(
+            "Google AI is not configured — set GOOGLE_API_KEY (see the AI Capabilities card).",
+            category=LLMFailureCategory.CONFIGURATION,
         )
     from google import genai
 

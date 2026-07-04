@@ -187,6 +187,37 @@ class LLMCallObservation(Base):
     error: Mapped[str | None] = mapped_column(Text)
 
 
+class ConversationUnderstandingFailure(Base):
+    """Durable terminal failure for Conversation Understanding resume logic."""
+
+    __tablename__ = "conversation_understanding_failures"
+    __table_args__ = (
+        Index(
+            "ix_conversation_understanding_failures_day_last_failed_at",
+            "day",
+            "last_failed_at",
+        ),
+        Index(
+            "ix_conversation_understanding_failures_pipeline_run_id",
+            "pipeline_run_id",
+        ),
+    )
+
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id"), primary_key=True
+    )
+    pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("pipeline_runs.id"))
+    day: Mapped[int] = mapped_column(Integer)
+    model: Mapped[str] = mapped_column(String)
+    prompt_version: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String)
+    failure_category: Mapped[str] = mapped_column(String)
+    error: Mapped[str] = mapped_column(Text)
+    retry_count: Mapped[int] = mapped_column(Integer)
+    first_failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class Anomaly(Base):
     """A detected operational anomaly — the canonical Phase 4 artifact.
 

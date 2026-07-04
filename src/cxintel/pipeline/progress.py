@@ -21,6 +21,8 @@ class ProgressSnapshot(BaseModel):
     stage_label: str
     total_work: int = Field(default=0, ge=0)
     completed_work: int = Field(default=0, ge=0)
+    succeeded_work: int = Field(default=0, ge=0)
+    remaining_work: int = Field(default=0, ge=0)
     percentage: float = Field(default=0.0, ge=0.0, le=100.0)
     elapsed_seconds: float = Field(default=0.0, ge=0.0)
     estimated_remaining_seconds: float | None = Field(default=None, ge=0.0)
@@ -46,6 +48,7 @@ def refresh_snapshot(snapshot: ProgressSnapshot, elapsed_seconds: float) -> Prog
     """Return ``snapshot`` with elapsed-derived fields recalculated."""
     elapsed = max(0.0, elapsed_seconds)
     throughput = snapshot.completed_work / elapsed if elapsed > 0 else 0.0
+    remaining_work = max(0, snapshot.total_work - snapshot.completed_work)
     percentage = (
         min(100.0, (snapshot.completed_work / snapshot.total_work) * 100)
         if snapshot.total_work
@@ -61,6 +64,7 @@ def refresh_snapshot(snapshot: ProgressSnapshot, elapsed_seconds: float) -> Prog
     return snapshot.model_copy(
         update={
             "percentage": percentage,
+            "remaining_work": remaining_work,
             "elapsed_seconds": elapsed,
             "estimated_remaining_seconds": remaining,
             "throughput_conversations_per_second": throughput,
@@ -102,6 +106,7 @@ class ProgressReporter:
         message: str | None = None,
         total_work: int | None = None,
         completed_work: int | None = None,
+        succeeded_work: int | None = None,
         current_item: str | None = None,
     ) -> None:
         """Emit the current snapshot, optionally updating selected fields first."""
@@ -113,6 +118,8 @@ class ProgressReporter:
                 updates["total_work"] = max(0, total_work)
             if completed_work is not None:
                 updates["completed_work"] = max(0, completed_work)
+            if succeeded_work is not None:
+                updates["succeeded_work"] = max(0, succeeded_work)
             if current_item is not None:
                 updates["current_item"] = current_item
             snapshot = self._snapshot.model_copy(update=updates) if updates else self._snapshot
@@ -133,9 +140,11 @@ class ProgressReporter:
     ) -> None:
         with self._lock:
             completed = self._snapshot.completed_work + max(0, count)
+            succeeded = self._snapshot.succeeded_work + (0 if failed else max(0, count))
             failures = self._snapshot.failure_count + (1 if failed else 0)
             updates: dict[str, object] = {
                 "completed_work": completed,
+                "succeeded_work": succeeded,
                 "failure_count": failures,
             }
             if current_item is not None:

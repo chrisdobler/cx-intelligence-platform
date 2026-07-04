@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
 from pydantic import BaseModel, Field
 
-from cxintel.llm import GoogleProvider, LLMExtractionError, get_llm_provider
+from cxintel.llm import (
+    GoogleProvider,
+    LLMExtractionError,
+    LLMFailureCategory,
+    PermanentLLMExtractionError,
+    RetryableLLMExtractionError,
+    get_llm_provider,
+)
 
 
 class Extraction(BaseModel):
@@ -96,6 +104,16 @@ def test_extract_retries_transient_api_errors() -> None:
     assert len(models.calls) == 2
 
 
+def test_extract_retries_transport_errors_then_succeeds() -> None:
+    provider, models = make_provider(
+        [httpx.TimeoutException("timeout"), '{"name": "ok", "score": 0.1}']
+    )
+    retries: list[int] = []
+    assert provider.extract("p", Extraction, on_retry=lambda a, _e: retries.append(a)).name == "ok"
+    assert len(models.calls) == 2
+    assert retries == [2]
+
+
 def test_rate_limit_honours_server_suggested_delay(monkeypatch: pytest.MonkeyPatch) -> None:
     """429s carry 'Please retry in Xs' — sleeping less just burns attempts."""
     from google.genai import errors
@@ -133,6 +151,33 @@ def test_rate_limit_gets_more_attempts_than_validation_failures() -> None:
     provider, models = make_provider(responses)
     assert provider.extract("p", Extraction).name == "ok"
     assert len(models.calls) == 5
+
+
+def test_transient_exhaustion_is_retryable_failure() -> None:
+    from google.genai import errors
+
+    rate_limited = errors.APIError(429, {"error": {"message": "quota. Please retry in 0s."}})
+    provider, models = make_provider([rate_limited] * 5)
+    with pytest.raises(RetryableLLMExtractionError) as excinfo:
+        provider.extract("p", Extraction)
+
+    assert len(models.calls) == 5
+    assert excinfo.value.retryable is True
+    assert excinfo.value.category == LLMFailureCategory.TRANSIENT_API
+    assert excinfo.value.attempts == 5
+
+
+def test_non_transient_api_error_is_permanent_without_retry() -> None:
+    from google.genai import errors
+
+    bad_request = errors.APIError(400, {"error": {"message": "bad request"}})
+    provider, models = make_provider([bad_request])
+    with pytest.raises(PermanentLLMExtractionError) as excinfo:
+        provider.extract("p", Extraction)
+
+    assert len(models.calls) == 1
+    assert excinfo.value.retryable is False
+    assert excinfo.value.category == LLMFailureCategory.PERMANENT_API
 
 
 def test_factory_requires_configured_provider(monkeypatch: pytest.MonkeyPatch) -> None:

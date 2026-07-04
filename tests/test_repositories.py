@@ -13,6 +13,7 @@ from cxintel.repositories import (
     AnomalyRepository,
     ConversationIssueRepository,
     ConversationRepository,
+    ConversationUnderstandingFailureRepository,
     IssueCatalogRepository,
     LLMCallObservationRepository,
     MessageRepository,
@@ -293,6 +294,51 @@ def seeded_conversation(db_session: Session, external_id: str, day: int = 1) -> 
         [conversation_row(external_id, day=day)]
     )
     return uuid.uuid5(uuid.NAMESPACE_URL, external_id)
+
+
+def test_understanding_failure_repository_upserts_and_clears(db_session: Session) -> None:
+    conv_id = seeded_conversation(db_session, "conv_a")
+    repo = ConversationUnderstandingFailureRepository(db_session)
+    first = datetime(2026, 7, 3, 10, 0, tzinfo=UTC)
+    second = datetime(2026, 7, 3, 10, 5, tzinfo=UTC)
+
+    repo.upsert(
+        conversation_id=conv_id,
+        pipeline_run_id=None,
+        day=1,
+        model="gemini-2.5-flash",
+        prompt_version="v1",
+        status="terminal",
+        failure_category="validation",
+        error="bad shape",
+        retry_count=2,
+        failed_at=first,
+    )
+    db_session.commit()
+    assert repo.count() == 1
+
+    repo.upsert(
+        conversation_id=conv_id,
+        pipeline_run_id=None,
+        day=1,
+        model="gemini-2.5-flash",
+        prompt_version="v1",
+        status="terminal",
+        failure_category="permanent_api",
+        error="bad request",
+        retry_count=0,
+        failed_at=second,
+    )
+    db_session.commit()
+    failure = repo.get(conv_id)
+    assert failure is not None
+    assert failure.first_failed_at == first
+    assert failure.last_failed_at == second
+    assert failure.failure_category == "permanent_api"
+
+    repo.clear(conv_id)
+    db_session.commit()
+    assert repo.count() == 0
 
 
 def test_issue_replace_for_conversation_regenerates(db_session: Session) -> None:

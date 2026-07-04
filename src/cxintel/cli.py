@@ -125,16 +125,25 @@ def understand(
     full: bool = typer.Option(
         False, "--full", help="Process the full dataset (default: sample of 100)."
     ),
+    retry_failures: bool = typer.Option(
+        False,
+        "--retry-failures",
+        help="Retry conversations with recorded terminal understanding failures.",
+    ),
 ) -> None:
     """Run LLM conversation understanding (resumable; skips analyzed conversations)."""
     from .pipeline.orchestrator import run_stage
+
+    if full and retry_failures:
+        typer.secho("--full and --retry-failures are mutually exclusive.", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
 
     try:
         summary = run_stage(
             "understand",
             progress=typer.echo,
             trigger="cli",
-            option="full" if full else "sample",
+            option="retry_failures" if retry_failures else "full" if full else "sample",
         )
     except Exception as exc:
         typer.secho(f"understanding failed: {exc}", fg=typer.colors.RED)

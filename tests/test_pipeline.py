@@ -122,6 +122,7 @@ def test_real_registry_has_five_stages_in_order() -> None:
     assert understand_options == [
         ("sample", "Run Sample (100)"),
         ("full", "Run Full Dataset"),
+        ("retry_failures", "Retry Recorded Failures"),
     ]
     # Every stage carries card data.
     for s in statuses:
@@ -330,6 +331,8 @@ def test_job_tracker_structured_progress_updates(monkeypatch: pytest.MonkeyPatch
     tracker.start("pipeline", work)
     assert seen[0].stage_key == "ingest"
     assert seen[0].completed_work == 2
+    assert seen[0].succeeded_work == 2
+    assert seen[0].remaining_work == 2
     assert seen[0].total_work == 4
     assert seen[0].percentage == 50
     assert seen[0].current_item == "conv_1"

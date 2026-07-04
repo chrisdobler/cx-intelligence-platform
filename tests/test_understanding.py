@@ -10,11 +10,17 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
-from cxintel.llm import RetryCallback
+from cxintel.llm import (
+    LLMFailureCategory,
+    PermanentLLMExtractionError,
+    RetryableLLMExtractionError,
+    RetryCallback,
+)
 from cxintel.models import Conversation, ConversationIssue, Message, PipelineRun
 from cxintel.repositories import (
     ConversationAnalysisRepository,
     ConversationIssueRepository,
+    ConversationUnderstandingFailureRepository,
     IssueCatalogRepository,
     LLMCallObservationRepository,
 )
@@ -196,14 +202,13 @@ def test_successful_extraction_records_llm_observation(
 def test_failed_extraction_records_observation_without_analysis(
     factory: Any, db_session: Session
 ) -> None:
-    from cxintel.llm import LLMExtractionError
-
     conv_id = seed_conversation(db_session, "conv_a", 1, "marker-alpha")
-    provider = FakeProvider({"marker-alpha": LLMExtractionError("no valid response")})
+    provider = FakeProvider({"marker-alpha": PermanentLLMExtractionError("no valid response")})
 
     result = make_service(factory, provider).run(limit=None)
 
     assert result.failed == 1
+    assert result.permanent_failed == 1
     assert ConversationAnalysisRepository(db_session).count() == 0
     observations = LLMCallObservationRepository(db_session).slowest()
     assert len(observations) == 1
@@ -211,6 +216,10 @@ def test_failed_extraction_records_observation_without_analysis(
     assert observations[0].pipeline_run_id is None
     assert observations[0].status == "failed"
     assert observations[0].error is not None and "no valid response" in observations[0].error
+    failure = ConversationUnderstandingFailureRepository(db_session).get(conv_id)
+    assert failure is not None
+    assert failure.failure_category == LLMFailureCategory.PERMANENT_API
+    assert failure.error == "no valid response"
 
 
 def test_retry_callbacks_increment_observation_retry_count(
@@ -292,6 +301,63 @@ def test_rerun_skips_already_analyzed(factory: Any, db_session: Session) -> None
     assert len(provider.prompts) == 1  # provider not called again
 
 
+def test_normal_rerun_skips_recorded_terminal_failures(
+    factory: Any, db_session: Session
+) -> None:
+    seed_conversation(db_session, "conv_a", 1, "marker-alpha")
+    provider = FakeProvider({"marker-alpha": PermanentLLMExtractionError("bad schema")})
+    service = make_service(factory, provider)
+
+    first = service.run(limit=None)
+    assert first.failed == 1
+    assert ConversationUnderstandingFailureRepository(db_session).count() == 1
+
+    second = service.run(limit=None)
+    assert second.analyzed == 0
+    assert second.failed == 0
+    assert second.skipped_terminal_failures == 1
+    assert len(provider.prompts) == 1
+
+
+def test_retryable_failure_remains_pending_for_later_normal_rerun(
+    factory: Any, db_session: Session
+) -> None:
+    seed_conversation(db_session, "conv_a", 1, "marker-alpha")
+    transient = RetryableLLMExtractionError(
+        "quota exhausted",
+        category=LLMFailureCategory.TRANSIENT_API,
+        attempts=5,
+    )
+    provider = FakeProvider({"marker-alpha": transient})
+
+    first = make_service(factory, provider).run(limit=None)
+    assert first.failed == 1
+    assert first.retryable_failed == 1
+    assert ConversationUnderstandingFailureRepository(db_session).count() == 0
+    assert ConversationAnalysisRepository(db_session).count() == 0
+
+    recovery = FakeProvider({"marker-alpha": analysis_for(["leak"])})
+    second = make_service(factory, recovery).run(limit=None)
+    assert second.analyzed == 1
+    assert ConversationAnalysisRepository(db_session).count() == 1
+
+
+def test_retry_failures_mode_reprocesses_and_clears_terminal_failure(
+    factory: Any, db_session: Session
+) -> None:
+    conv_id = seed_conversation(db_session, "conv_a", 1, "marker-alpha")
+    provider = FakeProvider({"marker-alpha": PermanentLLMExtractionError("bad schema")})
+    make_service(factory, provider).run(limit=None)
+    assert ConversationUnderstandingFailureRepository(db_session).get(conv_id) is not None
+
+    recovery = FakeProvider({"marker-alpha": analysis_for(["leak"])})
+    result = make_service(factory, recovery).run(limit=None, retry_failures=True)
+
+    assert result.analyzed == 1
+    assert ConversationAnalysisRepository(db_session).count() == 1
+    assert ConversationUnderstandingFailureRepository(db_session).get(conv_id) is None
+
+
 def test_limit_caps_work_and_defers_catalog(factory: Any, db_session: Session) -> None:
     seed_conversation(db_session, "conv_a", 1, "marker-alpha")
     seed_conversation(db_session, "conv_b", 1, "marker-beta")
@@ -312,19 +378,22 @@ def test_limit_caps_work_and_defers_catalog(factory: Any, db_session: Session) -
 
 
 def test_extraction_failure_recorded_and_skipped(factory: Any, db_session: Session) -> None:
-    from cxintel.llm import LLMExtractionError
-
     seed_conversation(db_session, "conv_a", 1, "marker-alpha")
     seed_conversation(db_session, "conv_b", 1, "marker-beta")
     provider = FakeProvider(
         {
-            "marker-alpha": LLMExtractionError("no valid response after 3 attempts"),
+            "marker-alpha": PermanentLLMExtractionError(
+                "no valid response after 3 attempts",
+                category=LLMFailureCategory.VALIDATION,
+                attempts=3,
+            ),
             "marker-beta": analysis_for(["noise"]),
         }
     )
     result = make_service(factory, provider).run(limit=None)
     assert result.analyzed == 1
     assert result.failed == 1
+    assert result.permanent_failed == 1
     # Nothing persisted for the failed conversation.
     assert ConversationAnalysisRepository(db_session).count() == 1
     # A failure means Day 1 is not fully analyzed — no baseline catalog yet.
@@ -335,14 +404,14 @@ def test_extraction_failure_recorded_and_skipped(factory: Any, db_session: Sessi
 def test_progress_reports_total_completed_current_and_failures(
     factory: Any, db_session: Session
 ) -> None:
-    from cxintel.llm import LLMExtractionError
-
     seed_conversation(db_session, "conv_a", 1, "marker-alpha")
     seed_conversation(db_session, "conv_b", 1, "marker-beta")
     provider = FakeProvider(
         {
             "marker-alpha": analysis_for(["leak"]),
-            "marker-beta": LLMExtractionError("no valid response after 3 attempts"),
+            "marker-beta": PermanentLLMExtractionError(
+                "no valid response after 3 attempts"
+            ),
         }
     )
     updates: list[Any] = []
@@ -355,6 +424,8 @@ def test_progress_reports_total_completed_current_and_failures(
     assert final.stage_key == "understand"
     assert final.total_work == 2
     assert final.completed_work == 2
+    assert final.succeeded_work == 1
+    assert final.remaining_work == 0
     assert final.percentage == 100
     assert final.current_item in {"conv_a", "conv_b"}
     assert final.failure_count == 1
