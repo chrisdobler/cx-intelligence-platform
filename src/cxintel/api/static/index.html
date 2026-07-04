@@ -337,7 +337,7 @@
 
     <section>
       <h2>Pipeline</h2>
-      <div class="card pipeline-head">
+      <div class="card pipeline-head" id="pipeline-control">
         <div class="head-row">
           <div>
             <span class="name">Pipeline control</span><br>
@@ -716,6 +716,11 @@
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     }
 
+    function scrollToPipelineControl() {
+      document.getElementById("pipeline-control")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
     async function postRun(url) {
       try {
         const res = await fetch(url, { method: "POST" });
@@ -729,6 +734,7 @@
         }
         startPolling();
         await load();
+        scrollToPipelineControl();
       } catch (e) {
         document.getElementById("job-line").textContent = "Could not reach the API.";
       }
