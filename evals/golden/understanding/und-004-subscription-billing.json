@@ -1,0 +1,46 @@
+{
+  "case_id": "und-004-subscription-billing",
+  "description": "Subscription renewed without notification; agent offers refund. Verbatim conv_3abec20f.",
+  "conversation": {
+    "product": "Pod 3 Cover",
+    "category": "billing",
+    "priority": "medium",
+    "status": "resolved"
+  },
+  "messages": [
+    {
+      "role": "customer",
+      "body": "Subscription renewed without notification. Would have cancelled."
+    },
+    {
+      "role": "agent",
+      "body": "I'm sorry about the billing issues. Let me look into this right away. If there are unauthorized or incorrect charges, I'll process refunds immediately."
+    },
+    {
+      "role": "customer",
+      "body": "My warranty expires next month. I need this resolved before then."
+    }
+  ],
+  "expected": {
+    "issues": [
+      {
+        "canonical_name": "subscription renewed without notification",
+        "canonical_name_aliases": [
+          "incorrect billing charge",
+          "unauthorized subscription renewal",
+          "unnotified subscription renewal",
+          "unwanted subscription renewal",
+          "subscription renewal notification issue",
+          "unauthorized subscription charge",
+          "incorrect subscription charge",
+          "unauthorized charge",
+          "unauthorized billing charge"
+        ],
+        "severity_in": ["low", "medium"],
+        "symptoms_any": ["subscription", "renewed", "notification"]
+      }
+    ],
+    "requires_replacement": false,
+    "language": "English"
+  }
+}

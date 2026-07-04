@@ -1,0 +1,27 @@
+{
+  "case_id": "res-001-base-water-leak",
+  "description": "Water leak with dozens of resolved precedents (mostly replacements) — the assistant should ground a replacement recommendation.",
+  "issue": {
+    "canonical_name": "base water leak",
+    "customer_description": "The water is leaking everywhere y no se que hacer.",
+    "severity": "high",
+    "confidence": 1.0,
+    "customer_impact": "high",
+    "product": "Pod 3 Cover",
+    "symptoms": [
+      "The water is leaking everywhere",
+      "He intentado reiniciar el hub pero sigue con el mismo problema"
+    ],
+    "catalog": {"matched": true, "confidence": 1.0},
+    "resolution_status": "unresolved",
+    "resolution_summary": null
+  },
+  "limit": 5,
+  "expected": {
+    "grounded": true,
+    "evidence_strength_in": ["moderate", "strong"],
+    "min_citations": 1,
+    "min_recommended_actions": 1,
+    "actions_any_keywords": ["replacement", "replace"]
+  }
+}

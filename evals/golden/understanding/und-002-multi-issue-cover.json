@@ -1,0 +1,103 @@
+{
+  "case_id": "und-002-multi-issue-cover",
+  "description": "Detailed multi-issue report: weak cooling, dual-zone cross-talk, ignored Autopilot schedule; resolved by replacement. Based on conv_532ed395.",
+  "conversation": {
+    "product": "Pod 3 Cover",
+    "category": "hardware",
+    "priority": "medium",
+    "status": "resolved"
+  },
+  "messages": [
+    {
+      "role": "customer",
+      "body": "I need help understanding why my Pod 3 Cover temperature control seems completely broken. I've had the pod for about 6 months and for the first 4 months it was amazing.\n\nBut starting about 2 months ago, the behavior changed. Here's what I'm experiencing now:\n\n1. Setting to -8 or -10 barely cools the bed at all. It feels maybe 2-3 degrees cooler than neutral, when before it would be noticeably cold.\n2. The cooling seems to work in \"pulses\" - it'll get cool for about 5 minutes, then warm back up, then cool again. This cycling wakes me up.\n3. My side and my partner's side seem to be \"linked\" even though we have dual zone. When she turns her side up to +5, my side gets warmer too within about 30 minutes.\n4. The Autopilot temperature schedule seems to be ignored entirely. I have it set to start cooling at 10pm but the bed doesn't start cooling until midnight or later.\n\nI've tried power cycling the hub multiple times, refilling water, checking for air bubbles, and disabling and re-enabling Autopilot. My sleep quality has deteriorated significantly."
+    },
+    {
+      "role": "agent",
+      "body": "I'm sorry about the temperature issues. Let me check device diagnostics. I can see your hub's compressor is cycling more frequently than expected. Let me try remote recalibration."
+    },
+    {
+      "role": "customer",
+      "body": "Tried what you suggested but still having the same problem."
+    },
+    {
+      "role": "agent",
+      "body": "I've checked with our hardware team and they've confirmed this is a known issue with a specific batch. We'll be sending you a replacement."
+    },
+    {
+      "role": "customer",
+      "body": "Thanks. How long should I expect to wait for the replacement?"
+    },
+    {
+      "role": "agent",
+      "body": "I can see in our system that a replacement has been approved. Let me get the shipping details for you."
+    }
+  ],
+  "expected": {
+    "issues": [
+      {
+        "canonical_name": "dual zone temperature cross-talk",
+        "canonical_name_aliases": [
+          "dual zone cross-talk",
+          "dual zone temperature bleed",
+          "dual zone temperature control failure",
+          "dual zone temperature control issue",
+          "dual zone temperature control malfunction",
+          "dual zone control issue",
+          "dual zone malfunction",
+          "dual zone functionality issue",
+          "dual zone temperature discrepancy",
+          "dual zone not working"
+        ],
+        "product": "Pod 3 Cover"
+      },
+      {
+        "canonical_name": "autopilot schedule not working",
+        "canonical_name_aliases": [
+          "autopilot schedule ignored",
+          "autopilot temperature schedule ignored",
+          "autopilot not maintaining temperature",
+          "autopilot malfunction",
+          "autopilot not working",
+          "autopilot temperature not maintained",
+          "autopilot feature malfunction",
+          "autopilot temperature failure",
+          "autopilot temperature malfunction",
+          "autopilot temperature not working",
+          "temperature schedule not maintained"
+        ]
+      },
+      {
+        "canonical_name": "pod temperature control not working",
+        "canonical_name_aliases": [
+          "pod temperature control failure",
+          "pod temperature control issue",
+          "pod temperature control malfunction",
+          "temperature control failure",
+          "temperature control issue",
+          "temperature control malfunction",
+          "temperature control not working",
+          "cooling malfunction",
+          "insufficient cooling",
+          "pod cooling issue",
+          "pod cooling malfunction",
+          "pod not cooling",
+          "pod intermittent cooling",
+          "intermittent cooling",
+          "intermittent cooling issue",
+          "poor cooling performance",
+          "cooling performance degradation",
+          "mattress temperature control failure",
+          "pod 3 cover temperature control malfunction",
+          "mattress temperature control issue",
+          "mattress temperature control not working"
+        ],
+        "symptoms_any": ["cool", "pulses", "temperature"]
+      }
+    ],
+    "resolution_resolved": true,
+    "resolution_type": "replacement",
+    "requires_replacement": true,
+    "multiple_issues": true
+  }
+}

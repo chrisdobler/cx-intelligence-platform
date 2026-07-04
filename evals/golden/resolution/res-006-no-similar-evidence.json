@@ -1,0 +1,25 @@
+{
+  "case_id": "res-006-no-similar-evidence",
+  "description": "An issue unlike anything in the knowledge base — the assistant must answer honestly ungrounded rather than invent a resolution.",
+  "issue": {
+    "canonical_name": "pod emits citrus smell",
+    "customer_description": "Every night around 2am the pod starts smelling strongly of oranges. No leak, no heat, works fine otherwise.",
+    "severity": "low",
+    "confidence": 0.8,
+    "customer_impact": "low",
+    "product": "Pod 3",
+    "symptoms": [
+      "strong orange citrus smell at night",
+      "no other malfunction observed"
+    ],
+    "catalog": {"matched": false, "confidence": 0.9},
+    "resolution_status": "unresolved",
+    "resolution_summary": null
+  },
+  "limit": 5,
+  "expected": {
+    "grounded": false,
+    "max_citations": 0,
+    "evidence_strength_in": ["none", "weak"]
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "version": "1.0",
+  "description": "Golden evaluation dataset for the CX Intelligence Platform. Cases are authored from data/raw/sample_tickets_v6.json conversations covered by the derived data snapshot, so the knowledge base contains their documents."
+}

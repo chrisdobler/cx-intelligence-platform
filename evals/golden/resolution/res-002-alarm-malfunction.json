@@ -1,0 +1,26 @@
+{
+  "case_id": "res-002-alarm-malfunction",
+  "description": "Unreliable alarm with many resolved precedents — expect a grounded recommendation with citations.",
+  "issue": {
+    "canonical_name": "alarm malfunction",
+    "customer_description": "Alarm doesn't work reliably. Only goes off about half the time.",
+    "severity": "medium",
+    "confidence": 0.9,
+    "customer_impact": "high",
+    "product": "Pod 3 Cover",
+    "symptoms": [
+      "Alarm doesn't work reliably",
+      "Only goes off about half the time"
+    ],
+    "catalog": {"matched": true, "confidence": 0.95},
+    "resolution_status": "unresolved",
+    "resolution_summary": null
+  },
+  "limit": 5,
+  "expected": {
+    "grounded": true,
+    "evidence_strength_in": ["moderate", "strong"],
+    "min_citations": 1,
+    "min_recommended_actions": 1
+  }
+}

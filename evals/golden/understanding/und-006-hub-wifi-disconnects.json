@@ -1,0 +1,66 @@
+{
+  "case_id": "und-006-hub-wifi-disconnects",
+  "description": "Technically detailed report of hub WiFi drops requiring physical restarts; batch-defect replacement approved. Based on conv_9a1c6650.",
+  "conversation": {
+    "product": "Pod 3 Cover",
+    "category": "software",
+    "priority": "medium",
+    "status": "escalated"
+  },
+  "messages": [
+    {
+      "role": "customer",
+      "body": "I'm having a persistent WiFi connectivity problem with my Pod 3 Cover hub that's been driving me crazy for the past three weeks. I'm a software engineer so I've done extensive troubleshooting on my end before reaching out.\n\nThe hub connects to WiFi fine initially after a power cycle. It stays connected for anywhere between 2-8 hours, then drops offline. When it drops, the hub LED turns yellow. The app shows \"Hub Offline\" and I lose all remote control functionality. The only way to restore connectivity is to physically unplug the hub and plug it back in.\n\nWhat I've tried so far: static IP via DHCP reservation, a dedicated 2.4GHz-only SSID, changing the WiFi channel, moving the hub closer to the router, factory resetting the hub, and checking for firmware updates. Every other device on my network works perfectly.\n\nCould this be a firmware bug? Is there a way to roll back?"
+    },
+    {
+      "role": "agent",
+      "body": "I understand how frustrating the disconnections are. Hub requires 2.4GHz WiFi. Can you confirm: 1) Hub within 30 feet of router? 2) Using 2.4GHz or 5GHz? 3) Router brand/model?"
+    },
+    {
+      "role": "customer",
+      "body": "I found a Reddit thread with dozens of people having the same problem. Is this a known issue?"
+    },
+    {
+      "role": "agent",
+      "body": "I've checked with our hardware team and they've confirmed this is a known issue with a specific batch. We'll be sending you a replacement."
+    },
+    {
+      "role": "customer",
+      "body": "Thanks for looking into this. How long should I expect to wait for the replacement?"
+    },
+    {
+      "role": "agent",
+      "body": "I can see in our system that a replacement has been approved. Let me get the shipping details for you."
+    }
+  ],
+  "expected": {
+    "issues": [
+      {
+        "canonical_name": "hub wifi disconnection",
+        "canonical_name_aliases": [
+          "hub wifi connectivity issue",
+          "hub wifi connectivity",
+          "hub wifi connection issue",
+          "hub wifi connection failure",
+          "wifi disconnection",
+          "wifi connectivity issue",
+          "hub intermittent connectivity",
+          "intermittent wifi connectivity",
+          "intermittent hub connectivity",
+          "hub wifi reconnection failure",
+          "wifi reconnection failure",
+          "wifi reconnection issue",
+          "hub connectivity issue",
+          "hub offline"
+        ],
+        "severity_in": ["medium", "high"],
+        "product": "Pod 3 Cover",
+        "symptoms_any": ["wifi", "disconnect", "offline"],
+        "min_confidence": 0.6
+      }
+    ],
+    "resolution_resolved": true,
+    "resolution_type": "replacement",
+    "requires_replacement": true
+  }
+}

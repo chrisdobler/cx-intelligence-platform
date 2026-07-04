@@ -79,6 +79,20 @@ class Settings(BaseSettings):
         description="Where the generated anomaly report is written.",
     )
 
+    # --- Evaluation (Phase 7) ---------------------------------------------
+    evaluation_golden_path: str = Field(
+        default="evals/golden",
+        description="Root directory of the version-controlled golden evaluation dataset.",
+    )
+    evaluation_report_path: str = Field(
+        default="reports/evaluation-report",
+        description="Base path of the evaluation report ('.json' and '.md' are appended).",
+    )
+    evaluation_baseline_path: str = Field(
+        default="evals/baseline/evaluation-baseline.json",
+        description="The committed regression baseline (a previously promoted report).",
+    )
+
     # --- Pipeline knobs ---------------------------------------------------
     raw_data_path: str = Field(default="data/raw/sample_tickets_v6.json")
     derived_data_path: str = Field(default="data/processed/data-artifacts.tgz")

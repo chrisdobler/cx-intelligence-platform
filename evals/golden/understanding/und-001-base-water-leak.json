@@ -1,0 +1,56 @@
+{
+  "case_id": "und-001-base-water-leak",
+  "description": "Sarcastic customer reporting a water leak; resolved with a batch-defect replacement. Based on conv_eb684d18.",
+  "conversation": {
+    "product": "Pod 3",
+    "category": "onboarding",
+    "priority": "low",
+    "status": "resolved"
+  },
+  "messages": [
+    {
+      "role": "customer",
+      "body": "Oh wonderful, another night of my premium sleep system turning my bed into a swimming pool. Really living the luxury lifestyle here. The $2,500 nightstand decoration has decided water features are the hot new bedroom trend. I'm sure this is a 'feature' right?"
+    },
+    {
+      "role": "agent",
+      "body": "I'm so sorry about the water leak. Let me check with our hardware team right away."
+    },
+    {
+      "role": "customer",
+      "body": "I've already done all basic troubleshooting. Please don't ask me to restart the hub again."
+    },
+    {
+      "role": "agent",
+      "body": "I've checked with our hardware team and they've confirmed this is a known issue with a specific batch. We'll be sending you a replacement."
+    },
+    {
+      "role": "customer",
+      "body": "I'm really disappointed. Expected better for the price I paid."
+    }
+  ],
+  "expected": {
+    "issues": [
+      {
+        "canonical_name": "base water leak",
+        "canonical_name_aliases": [
+          "pod water leak",
+          "bed water leak",
+          "hub water leak",
+          "hub base water leak",
+          "pod hub water leak",
+          "sleep system water leak"
+        ],
+        "severity_in": ["medium", "high", "critical"],
+        "product": "Pod 3",
+        "resolution_status": "resolved",
+        "symptoms_any": ["water", "swimming pool", "leak"],
+        "min_confidence": 0.6
+      }
+    ],
+    "resolution_resolved": true,
+    "resolution_type": "replacement",
+    "requires_replacement": true,
+    "language": "English"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "case_id": "und-005-unreliable-alarm",
+  "description": "Alarm fires only half the time; resolved by batch-defect replacement. Verbatim conv_7ade77dd.",
+  "conversation": {
+    "product": "Pod 3 Cover",
+    "category": "software",
+    "priority": "medium",
+    "status": "resolved"
+  },
+  "messages": [
+    {
+      "role": "customer",
+      "body": "Alarm doesn't work reliably. Only goes off about half the time."
+    },
+    {
+      "role": "agent",
+      "body": "I'm sorry about this. Could you tell me: 1) Phone model and OS version? 2) App version? 3) When this started? Let me check for known issues."
+    },
+    {
+      "role": "customer",
+      "body": "My warranty expires next month. I need this resolved before then."
+    },
+    {
+      "role": "agent",
+      "body": "Got it. Based on what you've described, I'd like to try one more thing before we go the replacement route."
+    },
+    {
+      "role": "customer",
+      "body": "Tried what you suggested but still having the same problem."
+    },
+    {
+      "role": "agent",
+      "body": "I've checked with our hardware team and they've confirmed this is a known issue with a specific batch. We'll be sending you a replacement."
+    }
+  ],
+  "expected": {
+    "issues": [
+      {
+        "canonical_name": "alarm malfunction",
+        "canonical_name_aliases": [
+          "alarm unreliability",
+          "unreliable alarm",
+          "alarm not working reliably",
+          "app alarm not working",
+          "alarm reliability issue",
+          "alarm reliability",
+          "alarm not reliable",
+          "alarm feature unreliable",
+          "unreliable alarm feature",
+          "pod alarm unreliable",
+          "intermittent alarm failure",
+          "intermittent alarm feature"
+        ],
+        "severity_in": ["low", "medium", "high"],
+        "resolution_status": "resolved",
+        "symptoms_any": ["alarm"]
+      }
+    ],
+    "resolution_resolved": true,
+    "resolution_type": "replacement",
+    "requires_replacement": true
+  }
+}

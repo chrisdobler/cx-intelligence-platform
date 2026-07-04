@@ -27,7 +27,7 @@ from threading import Lock
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from ..llm import LLMExtractionError, LLMProvider
+from ..llm import LLMExtractionError, LLMProvider, LLMUsage
 from ..models import (
     Conversation,
     ConversationAnalysis,
@@ -312,6 +312,7 @@ class UnderstandingService:
         status = "succeeded"
         error: str | None = None
         analysis: StructuredConversation | None = None
+        usage: LLMUsage | None = None
 
         with self._session_factory() as session:
             phase_started = time.perf_counter()
@@ -355,6 +356,8 @@ class UnderstandingService:
             )
             llm_seconds = time.perf_counter() - phase_started
             issue_count = len(analysis.issues)
+            usage = getattr(self._provider, "last_usage", None)
+            model_version = getattr(self._provider, "last_model_version", None) or self._model
 
             now = datetime.now(tz=UTC)
             with self._session_factory() as session:
@@ -363,9 +366,7 @@ class UnderstandingService:
                     ConversationAnalysis(
                         conversation_id=conversation_id,
                         model=self._model,
-                        # Response-level version reporting arrives with Phase 7
-                        # observability; the configured model is the fallback.
-                        model_version=self._model,
+                        model_version=model_version,
                         prompt_version=PROMPT_VERSION,
                         processed_at=now,
                         analysis_json=analysis.model_dump(),
@@ -432,6 +433,9 @@ class UnderstandingService:
                     prompt_characters=prompt_characters,
                     issue_count=issue_count,
                     retry_count=retry_count,
+                    prompt_tokens=usage.prompt_tokens if usage else None,
+                    output_tokens=usage.output_tokens if usage else None,
+                    total_tokens=usage.total_tokens if usage else None,
                     started_at=observation_started_at,
                     finished_at=finished_at,
                     error=error,

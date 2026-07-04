@@ -185,6 +185,9 @@ class LLMCallObservation(Base):
     prompt_characters: Mapped[int] = mapped_column(Integer)
     issue_count: Mapped[int] = mapped_column(Integer)
     retry_count: Mapped[int] = mapped_column(Integer)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
@@ -250,6 +253,40 @@ class ConversationUnderstandingFailure(Base):
     retry_count: Mapped[int] = mapped_column(Integer)
     first_failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EvaluationRun(Base):
+    """One execution of the golden-dataset evaluation (Phase 7).
+
+    Stores the headline numbers as queryable columns and the full
+    :class:`~cxintel.evaluation.report.EvaluationReport` as JSONB so the
+    Control Center and CLI can show history without re-reading report files.
+    """
+
+    __tablename__ = "evaluation_runs"
+    __table_args__ = (Index("ix_evaluation_runs_started_at", "started_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("pipeline_runs.id"))
+    dataset_version: Mapped[str] = mapped_column(String)
+    model: Mapped[str] = mapped_column(String)
+    embedding_model: Mapped[str] = mapped_column(String)
+    understanding_prompt_version: Mapped[str] = mapped_column(String)
+    resolution_prompt_version: Mapped[str] = mapped_column(String)
+    suites: Mapped[list[str]] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String)  # succeeded | failed
+    total_cases: Mapped[int] = mapped_column(Integer)
+    passed_cases: Mapped[int] = mapped_column(Integer)
+    pass_rate: Mapped[float] = mapped_column(Float)
+    regression_count: Mapped[int] = mapped_column(Integer)
+    retrieval_metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    grounding_metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    report: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[float] = mapped_column(Float)
+    error: Mapped[str | None] = mapped_column(Text)
 
 
 class KnowledgeDocumentRecord(Base):

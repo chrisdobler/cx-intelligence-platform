@@ -1,0 +1,28 @@
+{
+  "case_id": "ret-002-app-crash-sleep-report",
+  "description": "App crashing on the sleep report should retrieve its known source conversations. Issue from conv_446e2c4c.",
+  "issue": {
+    "canonical_name": "app crashing on sleep report",
+    "customer_description": "App crashes every time I view sleep report. Started after last update.",
+    "severity": "high",
+    "confidence": 1.0,
+    "customer_impact": "high",
+    "product": "Pod 4 Ultra",
+    "symptoms": [
+      "App crashes every time I view sleep report",
+      "Started after last update"
+    ],
+    "catalog": {"matched": true, "confidence": 1.0},
+    "resolution_status": "resolved",
+    "resolution_summary": "A solution was found for the app crashing issue."
+  },
+  "limit": 5,
+  "expected_conversation_external_ids": [
+    "conv_446e2c4c",
+    "conv_9c74fd46",
+    "conv_a44c9cc2",
+    "conv_c29d187b",
+    "conv_dc02fe41"
+  ],
+  "min_recall": 0.2
+}

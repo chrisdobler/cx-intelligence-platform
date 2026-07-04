@@ -1,0 +1,29 @@
+{
+  "case_id": "ret-006-unknown-product-relaxes-filter",
+  "description": "A product with no knowledge documents must relax the metadata filter instead of returning nothing (progressive filter relaxation).",
+  "issue": {
+    "canonical_name": "pod intermittent cooling",
+    "customer_description": "Pod gets ice cold for 10 min then goes back to neutral.",
+    "severity": "medium",
+    "confidence": 1.0,
+    "customer_impact": "high",
+    "product": "Pod 9 Prototype",
+    "symptoms": [
+      "Pod gets ice cold for 10 min then goes back to neutral."
+    ],
+    "catalog": {"matched": true, "confidence": 1.0},
+    "resolution_status": "unresolved",
+    "resolution_summary": null
+  },
+  "limit": 5,
+  "expected_conversation_external_ids": [
+    "conv_12926084",
+    "conv_4c41f58a",
+    "conv_6a1be39e",
+    "conv_81150b38",
+    "conv_871cabec",
+    "conv_a0ff90ee"
+  ],
+  "min_recall": 0.0,
+  "expect_filter_relaxed": true
+}

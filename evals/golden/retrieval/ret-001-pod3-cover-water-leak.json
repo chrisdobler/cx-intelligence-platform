@@ -1,0 +1,25 @@
+{
+  "case_id": "ret-001-pod3-cover-water-leak",
+  "description": "Distinctive Pod 3 Cover water leak issue should retrieve its known source conversations. Issue from conv_2a597665.",
+  "issue": {
+    "canonical_name": "pod 3 cover water leak",
+    "customer_description": "The water is leaking everywhere y no se que hacer.",
+    "severity": "high",
+    "confidence": 0.9,
+    "customer_impact": "high",
+    "product": "Pod 3 Cover",
+    "symptoms": ["water is leaking everywhere"],
+    "catalog": {"matched": true, "confidence": 0.9},
+    "resolution_status": "resolved",
+    "resolution_summary": "A replacement unit was approved and initiated due to a persistent water leak."
+  },
+  "limit": 5,
+  "expected_conversation_external_ids": [
+    "conv_2a597665",
+    "conv_5e6192d5",
+    "conv_b8007744",
+    "conv_d8234aca",
+    "conv_e60d16eb"
+  ],
+  "min_recall": 0.4
+}

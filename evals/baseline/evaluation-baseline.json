@@ -1,0 +1,988 @@
+{
+  "run_id": "c2b9a471-128d-4bf0-b9b7-d651903a5ffe",
+  "generated_at": "2026-07-04T16:43:34.358997Z",
+  "duration_seconds": 31.051130291991285,
+  "dataset_version": "1.0",
+  "suites_run": [
+    "understanding",
+    "retrieval",
+    "resolution"
+  ],
+  "model": "gemini-2.5-flash-lite",
+  "embedding_model": "gemini-embedding-001",
+  "understanding_prompt_version": "1.2",
+  "resolution_prompt_version": "1.0",
+  "coverage": {
+    "understanding": 6,
+    "retrieval": 6,
+    "resolution": 6
+  },
+  "summary": {
+    "understanding": {
+      "total": 6,
+      "passed": 6,
+      "pass_rate": 1.0
+    },
+    "retrieval": {
+      "total": 6,
+      "passed": 6,
+      "pass_rate": 1.0
+    },
+    "resolution": {
+      "total": 6,
+      "passed": 5,
+      "pass_rate": 0.8333333333333334
+    }
+  },
+  "retrieval_metrics": {
+    "cases": 6,
+    "recall_at_k": 0.2816954926624738,
+    "precision_at_k": 0.6,
+    "hit_at_k": 0.8333333333333334,
+    "mrr": 0.6666666666666666,
+    "filter_relaxed_rate": 0.16666666666666666
+  },
+  "grounding_metrics": {
+    "cases": 6,
+    "citation_validity_rate": 1.0,
+    "grounded_accuracy": 0.8333333333333334,
+    "evidence_strength_match_rate": 0.8333333333333334,
+    "downgrade_rate": 0.0
+  },
+  "total_tokens": 111794,
+  "cases": [
+    {
+      "case_id": "und-001-base-water-leak",
+      "suite": "understanding",
+      "description": "Sarcastic customer reporting a water leak; resolved with a batch-defect replacement. Based on conv_eb684d18.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "issue[base water leak].presence",
+          "kind": "presence",
+          "expected": "one of ['base water leak', 'pod water leak', 'bed water leak', 'hub water leak', 'hub base water leak', 'pod hub water leak', 'sleep system water leak']",
+          "actual": "issues: ['pod water leak']",
+          "passed": true
+        },
+        {
+          "check": "issue[base water leak].severity",
+          "kind": "in_set",
+          "expected": "one of ['medium', 'high', 'critical']",
+          "actual": "high",
+          "passed": true
+        },
+        {
+          "check": "issue[base water leak].product",
+          "kind": "exact",
+          "expected": "Pod 3",
+          "actual": "Pod 3",
+          "passed": true
+        },
+        {
+          "check": "issue[base water leak].resolution_status",
+          "kind": "exact",
+          "expected": "resolved",
+          "actual": "resolved",
+          "passed": true
+        },
+        {
+          "check": "issue[base water leak].symptoms",
+          "kind": "keyword_any",
+          "expected": "any of ['water', 'swimming pool', 'leak']",
+          "actual": "['water leak from premium sleep system', 'bed turning into a swimming pool']",
+          "passed": true
+        },
+        {
+          "check": "issue[base water leak].confidence",
+          "kind": "min",
+          "expected": ">= 0.6",
+          "actual": "1.00",
+          "passed": true
+        },
+        {
+          "check": "resolution.resolved",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        },
+        {
+          "check": "resolution.resolution_type",
+          "kind": "exact",
+          "expected": "replacement",
+          "actual": "replacement",
+          "passed": true
+        },
+        {
+          "check": "resolution.requires_replacement",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        },
+        {
+          "check": "conversation.language",
+          "kind": "exact",
+          "expected": "English",
+          "actual": "English",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 2.694063125003595,
+      "error": null,
+      "tokens": {
+        "prompt_tokens": 15563,
+        "output_tokens": 477,
+        "total_tokens": 16040
+      },
+      "metrics": {}
+    },
+    {
+      "case_id": "und-002-multi-issue-cover",
+      "suite": "understanding",
+      "description": "Detailed multi-issue report: weak cooling, dual-zone cross-talk, ignored Autopilot schedule; resolved by replacement. Based on conv_532ed395.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "issue[dual zone temperature cross-talk].presence",
+          "kind": "presence",
+          "expected": "one of ['dual zone temperature cross-talk', 'dual zone cross-talk', 'dual zone temperature bleed', 'dual zone temperature control failure', 'dual zone temperature control issue', 'dual zone temperature control malfunction', 'dual zone control issue', 'dual zone malfunction', 'dual zone functionality issue', 'dual zone temperature discrepancy', 'dual zone not working']",
+          "actual": "issues: ['autopilot schedule ignored', 'dual zone temperature cross-talk', 'insufficient cooling', 'intermittent cooling', 'sleep quality degradation']",
+          "passed": true
+        },
+        {
+          "check": "issue[dual zone temperature cross-talk].product",
+          "kind": "exact",
+          "expected": "Pod 3 Cover",
+          "actual": "Pod 3 Cover",
+          "passed": true
+        },
+        {
+          "check": "issue[autopilot schedule not working].presence",
+          "kind": "presence",
+          "expected": "one of ['autopilot schedule not working', 'autopilot schedule ignored', 'autopilot temperature schedule ignored', 'autopilot not maintaining temperature', 'autopilot malfunction', 'autopilot not working', 'autopilot temperature not maintained', 'autopilot feature malfunction', 'autopilot temperature failure', 'autopilot temperature malfunction', 'autopilot temperature not working', 'temperature schedule not maintained']",
+          "actual": "issues: ['autopilot schedule ignored', 'dual zone temperature cross-talk', 'insufficient cooling', 'intermittent cooling', 'sleep quality degradation']",
+          "passed": true
+        },
+        {
+          "check": "issue[pod temperature control not working].presence",
+          "kind": "presence",
+          "expected": "one of ['pod temperature control not working', 'pod temperature control failure', 'pod temperature control issue', 'pod temperature control malfunction', 'temperature control failure', 'temperature control issue', 'temperature control malfunction', 'temperature control not working', 'cooling malfunction', 'insufficient cooling', 'pod cooling issue', 'pod cooling malfunction', 'pod not cooling', 'pod intermittent cooling', 'intermittent cooling', 'intermittent cooling issue', 'poor cooling performance', 'cooling performance degradation', 'mattress temperature control failure', 'pod 3 cover temperature control malfunction', 'mattress temperature control issue', 'mattress temperature control not working']",
+          "actual": "issues: ['autopilot schedule ignored', 'dual zone temperature cross-talk', 'insufficient cooling', 'intermittent cooling', 'sleep quality degradation']",
+          "passed": true
+        },
+        {
+          "check": "issue[pod temperature control not working].symptoms",
+          "kind": "keyword_any",
+          "expected": "any of ['cool', 'pulses', 'temperature']",
+          "actual": "['Setting to -8 or -10 barely cools the bed at all', 'Feels maybe 2-3 degrees cooler than neutral, when before it would be noticeably cold']",
+          "passed": true
+        },
+        {
+          "check": "resolution.resolved",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        },
+        {
+          "check": "resolution.resolution_type",
+          "kind": "exact",
+          "expected": "replacement",
+          "actual": "replacement",
+          "passed": true
+        },
+        {
+          "check": "resolution.requires_replacement",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        },
+        {
+          "check": "conversation.multiple_issues",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 5.296994832999189,
+      "error": null,
+      "tokens": {
+        "prompt_tokens": 15799,
+        "output_tokens": 1329,
+        "total_tokens": 17128
+      },
+      "metrics": {}
+    },
+    {
+      "case_id": "und-003-critical-safety-overheating",
+      "suite": "understanding",
+      "description": "Critical safety escalation: dangerously hot hub with burning smell; replacement arranged but conversation ends awaiting follow-up. Verbatim conv_a95597ab.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "issue[hub overheating with burning smell].presence",
+          "kind": "presence",
+          "expected": "one of ['hub overheating with burning smell', 'hub overheating and burning smell', 'hub overheating', 'critical hub safety issue', 'hub overheating and shutdown']",
+          "actual": "issues: ['escalation delay', 'escalation status inquiry', 'hub overheating and burning smell']",
+          "passed": true
+        },
+        {
+          "check": "issue[hub overheating with burning smell].severity",
+          "kind": "in_set",
+          "expected": "one of ['high', 'critical']",
+          "actual": "critical",
+          "passed": true
+        },
+        {
+          "check": "issue[hub overheating with burning smell].product",
+          "kind": "exact",
+          "expected": "Pod 4",
+          "actual": "Pod 4",
+          "passed": true
+        },
+        {
+          "check": "issue[hub overheating with burning smell].symptoms",
+          "kind": "keyword_any",
+          "expected": "any of ['burning', 'hot', 'temperature']",
+          "actual": "['Hub surface temperature dangerously high', 'Smells like burning plastic']",
+          "passed": true
+        },
+        {
+          "check": "issue[hub overheating with burning smell].confidence",
+          "kind": "min",
+          "expected": ">= 0.7",
+          "actual": "1.00",
+          "passed": true
+        },
+        {
+          "check": "resolution.requires_replacement",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 3.4432604999892646,
+      "error": null,
+      "tokens": {
+        "prompt_tokens": 15618,
+        "output_tokens": 826,
+        "total_tokens": 16444
+      },
+      "metrics": {}
+    },
+    {
+      "case_id": "und-004-subscription-billing",
+      "suite": "understanding",
+      "description": "Subscription renewed without notification; agent offers refund. Verbatim conv_3abec20f.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "issue[subscription renewed without notification].presence",
+          "kind": "presence",
+          "expected": "one of ['subscription renewed without notification', 'incorrect billing charge', 'unauthorized subscription renewal', 'unnotified subscription renewal', 'unwanted subscription renewal', 'subscription renewal notification issue', 'unauthorized subscription charge', 'incorrect subscription charge', 'unauthorized charge', 'unauthorized billing charge']",
+          "actual": "issues: ['unnotified subscription renewal', 'warranty expiration concern']",
+          "passed": true
+        },
+        {
+          "check": "issue[subscription renewed without notification].severity",
+          "kind": "in_set",
+          "expected": "one of ['low', 'medium']",
+          "actual": "medium",
+          "passed": true
+        },
+        {
+          "check": "issue[subscription renewed without notification].symptoms",
+          "kind": "keyword_any",
+          "expected": "any of ['subscription', 'renewed', 'notification']",
+          "actual": "['Subscription renewed without notification']",
+          "passed": true
+        },
+        {
+          "check": "resolution.requires_replacement",
+          "kind": "exact",
+          "expected": "False",
+          "actual": "False",
+          "passed": true
+        },
+        {
+          "check": "conversation.language",
+          "kind": "exact",
+          "expected": "English",
+          "actual": "English",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 2.7523000829969533,
+      "error": null,
+      "tokens": {
+        "prompt_tokens": 15464,
+        "output_tokens": 622,
+        "total_tokens": 16086
+      },
+      "metrics": {}
+    },
+    {
+      "case_id": "und-005-unreliable-alarm",
+      "suite": "understanding",
+      "description": "Alarm fires only half the time; resolved by batch-defect replacement. Verbatim conv_7ade77dd.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "issue[alarm malfunction].presence",
+          "kind": "presence",
+          "expected": "one of ['alarm malfunction', 'alarm unreliability', 'unreliable alarm', 'alarm not working reliably', 'app alarm not working', 'alarm reliability issue', 'alarm reliability', 'alarm not reliable', 'alarm feature unreliable', 'unreliable alarm feature', 'pod alarm unreliable', 'intermittent alarm failure', 'intermittent alarm feature']",
+          "actual": "issues: ['alarm reliability issue']",
+          "passed": true
+        },
+        {
+          "check": "issue[alarm malfunction].severity",
+          "kind": "in_set",
+          "expected": "one of ['low', 'medium', 'high']",
+          "actual": "medium",
+          "passed": true
+        },
+        {
+          "check": "issue[alarm malfunction].resolution_status",
+          "kind": "exact",
+          "expected": "resolved",
+          "actual": "resolved",
+          "passed": true
+        },
+        {
+          "check": "issue[alarm malfunction].symptoms",
+          "kind": "keyword_any",
+          "expected": "any of ['alarm']",
+          "actual": "['Alarm only goes off about half the time']",
+          "passed": true
+        },
+        {
+          "check": "resolution.resolved",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        },
+        {
+          "check": "resolution.resolution_type",
+          "kind": "exact",
+          "expected": "replacement",
+          "actual": "replacement",
+          "passed": true
+        },
+        {
+          "check": "resolution.requires_replacement",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 2.2870174589916132,
+      "error": null,
+      "tokens": {
+        "prompt_tokens": 15561,
+        "output_tokens": 453,
+        "total_tokens": 16014
+      },
+      "metrics": {}
+    },
+    {
+      "case_id": "und-006-hub-wifi-disconnects",
+      "suite": "understanding",
+      "description": "Technically detailed report of hub WiFi drops requiring physical restarts; batch-defect replacement approved. Based on conv_9a1c6650.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "issue[hub wifi disconnection].presence",
+          "kind": "presence",
+          "expected": "one of ['hub wifi disconnection', 'hub wifi connectivity issue', 'hub wifi connectivity', 'hub wifi connection issue', 'hub wifi connection failure', 'wifi disconnection', 'wifi connectivity issue', 'hub intermittent connectivity', 'intermittent wifi connectivity', 'intermittent hub connectivity', 'hub wifi reconnection failure', 'wifi reconnection failure', 'wifi reconnection issue', 'hub connectivity issue', 'hub offline']",
+          "actual": "issues: ['hub wifi connectivity issue']",
+          "passed": true
+        },
+        {
+          "check": "issue[hub wifi disconnection].severity",
+          "kind": "in_set",
+          "expected": "one of ['medium', 'high']",
+          "actual": "high",
+          "passed": true
+        },
+        {
+          "check": "issue[hub wifi disconnection].product",
+          "kind": "exact",
+          "expected": "Pod 3 Cover",
+          "actual": "Pod 3 Cover",
+          "passed": true
+        },
+        {
+          "check": "issue[hub wifi disconnection].symptoms",
+          "kind": "keyword_any",
+          "expected": "any of ['wifi', 'disconnect', 'offline']",
+          "actual": "['Hub connects to WiFi fine initially after a power cycle.', 'Stays connected for anywhere between 2-8 hours, then drops offline.', 'Hub LED turns yellow when disconnected.', \"App shows 'Hub Offline'.\", 'Loss of all remote control functionality.', 'Only way to restore connectivity is to physically unplug the hub and plug it back in.']",
+          "passed": true
+        },
+        {
+          "check": "issue[hub wifi disconnection].confidence",
+          "kind": "min",
+          "expected": ">= 0.6",
+          "actual": "1.00",
+          "passed": true
+        },
+        {
+          "check": "resolution.resolved",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        },
+        {
+          "check": "resolution.resolution_type",
+          "kind": "exact",
+          "expected": "replacement",
+          "actual": "replacement",
+          "passed": true
+        },
+        {
+          "check": "resolution.requires_replacement",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 3.0969190420000814,
+      "error": null,
+      "tokens": {
+        "prompt_tokens": 15766,
+        "output_tokens": 700,
+        "total_tokens": 16466
+      },
+      "metrics": {}
+    },
+    {
+      "case_id": "ret-001-pod3-cover-water-leak",
+      "suite": "retrieval",
+      "description": "Distinctive Pod 3 Cover water leak issue should retrieve its known source conversations. Issue from conv_2a597665.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "retrieval.kb_coverage",
+          "kind": "presence",
+          "expected": "all expected sources in knowledge base",
+          "actual": "all present",
+          "passed": true
+        },
+        {
+          "check": "retrieval.recall",
+          "kind": "min",
+          "expected": ">= 0.4 (expected sources: ['conv_2a597665', 'conv_5e6192d5', 'conv_b8007744', 'conv_d8234aca', 'conv_e60d16eb'])",
+          "actual": "0.80 (retrieved: ['conv_131f1fbf', 'conv_b8007744', 'conv_d8234aca', 'conv_5e6192d5', 'conv_e60d16eb'])",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 0.38177504199848045,
+      "error": null,
+      "tokens": null,
+      "metrics": {
+        "recall": 0.8,
+        "precision": 0.8,
+        "hit": 1.0,
+        "mrr": 0.5,
+        "filter_relaxed": 0.0
+      }
+    },
+    {
+      "case_id": "ret-002-app-crash-sleep-report",
+      "suite": "retrieval",
+      "description": "App crashing on the sleep report should retrieve its known source conversations. Issue from conv_446e2c4c.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "retrieval.kb_coverage",
+          "kind": "presence",
+          "expected": "all expected sources in knowledge base",
+          "actual": "all present",
+          "passed": true
+        },
+        {
+          "check": "retrieval.recall",
+          "kind": "min",
+          "expected": ">= 0.2 (expected sources: ['conv_446e2c4c', 'conv_9c74fd46', 'conv_a44c9cc2', 'conv_c29d187b', 'conv_dc02fe41'])",
+          "actual": "0.40 (retrieved: ['conv_4d074e2b', 'conv_446e2c4c', 'conv_40e9cb3d', 'conv_89b70b09', 'conv_dc02fe41'])",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 0.34577808300673496,
+      "error": null,
+      "tokens": null,
+      "metrics": {
+        "recall": 0.4,
+        "precision": 0.4,
+        "hit": 1.0,
+        "mrr": 0.5,
+        "filter_relaxed": 0.0
+      }
+    },
+    {
+      "case_id": "ret-003-hub-condensation-leak",
+      "suite": "retrieval",
+      "description": "Hub condensation leak: the top-5 must all be condensation-leak sources (the relevant pool spans several synonym catalog categories, so precision is the meaningful bar). Issue from conv_28f38679.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "retrieval.kb_coverage",
+          "kind": "presence",
+          "expected": "all expected sources in knowledge base",
+          "actual": "all present",
+          "passed": true
+        },
+        {
+          "check": "retrieval.recall",
+          "kind": "min",
+          "expected": ">= 0.0 (expected sources: ['conv_003b2612', 'conv_01f6e199', 'conv_02415752', 'conv_0ba22deb', 'conv_104b353b', 'conv_162a30c3', 'conv_1af77b21', 'conv_1afbc4ee', 'conv_21321a85', 'conv_21b61fb0', 'conv_28f38679', 'conv_2de8b63c', 'conv_35e77dc9', 'conv_3a9dc36b', 'conv_3c0a8224', 'conv_42902df8', 'conv_43dd2cf1', 'conv_453d9629', 'conv_4564a0c6', 'conv_4b27de38', 'conv_56bae1d2', 'conv_64b59035', 'conv_6831e521', 'conv_6db4301f', 'conv_72bc450e', 'conv_85b72b3b', 'conv_8a0f5243', 'conv_9467d4e4', 'conv_9ee97c56', 'conv_a1b551ea', 'conv_a5383505', 'conv_a9465fd8', 'conv_adebbea5', 'conv_afbc0181', 'conv_b140e58a', 'conv_b5b9f45a', 'conv_be3efeac', 'conv_c516bb28', 'conv_d67f3806', 'conv_e36eef8d', 'conv_e5b7f0d0', 'conv_e61fc6e5', 'conv_e664502c', 'conv_e841d7fc', 'conv_ea8b2897', 'conv_eacebf42', 'conv_eb512c57', 'conv_ef7a6f27', 'conv_f0b760bb', 'conv_f718594b', 'conv_f96c241c', 'conv_fa659b06', 'conv_fcf62f81'])",
+          "actual": "0.09 (retrieved: ['conv_42902df8', 'conv_eacebf42', 'conv_be3efeac', 'conv_4b27de38', 'conv_0ba22deb'])",
+          "passed": true
+        },
+        {
+          "check": "retrieval.precision",
+          "kind": "min",
+          "expected": ">= 0.8",
+          "actual": "1.00 (retrieved: ['conv_42902df8', 'conv_eacebf42', 'conv_be3efeac', 'conv_4b27de38', 'conv_0ba22deb'])",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 0.33599966700421646,
+      "error": null,
+      "tokens": null,
+      "metrics": {
+        "recall": 0.09433962264150944,
+        "precision": 1.0,
+        "hit": 1.0,
+        "mrr": 1.0,
+        "filter_relaxed": 0.0
+      }
+    },
+    {
+      "case_id": "ret-004-subscription-renewal",
+      "suite": "retrieval",
+      "description": "Billing issue (subscription renewed without notification): the top-5 must all be subscription-renewal sources, never hardware cases (precision over the synonym-category pool). Issue from conv_1580417b.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "retrieval.kb_coverage",
+          "kind": "presence",
+          "expected": "all expected sources in knowledge base",
+          "actual": "all present",
+          "passed": true
+        },
+        {
+          "check": "retrieval.recall",
+          "kind": "min",
+          "expected": ">= 0.0 (expected sources: ['conv_003fc688', 'conv_010d6b79', 'conv_0690c7fc', 'conv_06a2f80e', 'conv_08dc9f3a', 'conv_146cee5b', 'conv_1580417b', 'conv_1767fe0c', 'conv_1af81b5c', 'conv_20f97873', 'conv_2278a61c', 'conv_24720432', 'conv_24f66b30', 'conv_260e30f6', 'conv_2819ea78', 'conv_28c20a75', 'conv_29156080', 'conv_2d9a694f', 'conv_2e798a42', 'conv_31d2b172', 'conv_3bf823f9', 'conv_3d0bb51e', 'conv_3f20889f', 'conv_42e35733', 'conv_449c9b04', 'conv_44d38fe1', 'conv_45b655e5', 'conv_4a2defb1', 'conv_4bcc5d58', 'conv_4d27e63f', 'conv_4da05948', 'conv_4fafc46d', 'conv_502cb258', 'conv_57fb7df4', 'conv_585603fd', 'conv_5d3d1536', 'conv_5eaa12f5', 'conv_5fbe8189', 'conv_63e5e5ac', 'conv_64a56d72', 'conv_6904e373', 'conv_6b1b7b5a', 'conv_6b45141a', 'conv_7097a9ac', 'conv_77cd537f', 'conv_7d6de970', 'conv_96bbdf70', 'conv_9a21f53f', 'conv_9adbd469', 'conv_9cb6eb5a', 'conv_9d393a5d', 'conv_9e8665f6', 'conv_9f0e8f98', 'conv_a3c72d6d', 'conv_a7cc7b95', 'conv_aaed6c93', 'conv_ab912221', 'conv_b02bb63f', 'conv_c0bca9ed', 'conv_c8513474', 'conv_c90e45d7', 'conv_c9d1d82b', 'conv_cab6d4e7', 'conv_cb1d3ad8', 'conv_cc8f9292', 'conv_cf5f8027', 'conv_d0198f2c', 'conv_d2ad2c89', 'conv_d2e27295', 'conv_d7ede3e9', 'conv_d985c3d1', 'conv_db2e6d54', 'conv_e12d8723', 'conv_e30d434c', 'conv_e4409b28', 'conv_e96c18de', 'conv_e9855963', 'conv_ebba49fc', 'conv_ec534e60', 'conv_ff4fb4b5'])",
+          "actual": "0.06 (retrieved: ['conv_45b655e5', 'conv_2d9a694f', 'conv_5fbe8189', 'conv_6b45141a', 'conv_44d38fe1'])",
+          "passed": true
+        },
+        {
+          "check": "retrieval.precision",
+          "kind": "min",
+          "expected": ">= 0.8",
+          "actual": "1.00 (retrieved: ['conv_45b655e5', 'conv_2d9a694f', 'conv_5fbe8189', 'conv_6b45141a', 'conv_44d38fe1'])",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 0.3505873749963939,
+      "error": null,
+      "tokens": null,
+      "metrics": {
+        "recall": 0.0625,
+        "precision": 1.0,
+        "hit": 1.0,
+        "mrr": 1.0,
+        "filter_relaxed": 0.0
+      }
+    },
+    {
+      "case_id": "ret-005-pod-intermittent-cooling",
+      "suite": "retrieval",
+      "description": "Intermittent cooling issue should retrieve its known source conversations. Issue from conv_12926084.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "retrieval.kb_coverage",
+          "kind": "presence",
+          "expected": "all expected sources in knowledge base",
+          "actual": "all present",
+          "passed": true
+        },
+        {
+          "check": "retrieval.recall",
+          "kind": "min",
+          "expected": ">= 0.3 (expected sources: ['conv_12926084', 'conv_4c41f58a', 'conv_6a1be39e', 'conv_81150b38', 'conv_871cabec', 'conv_a0ff90ee'])",
+          "actual": "0.33 (retrieved: ['conv_12926084', 'conv_4c41f58a', 'conv_5e54882e', 'conv_8cbec0b5', 'conv_e9552be7'])",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 0.2792516249901382,
+      "error": null,
+      "tokens": null,
+      "metrics": {
+        "recall": 0.3333333333333333,
+        "precision": 0.4,
+        "hit": 1.0,
+        "mrr": 1.0,
+        "filter_relaxed": 0.0
+      }
+    },
+    {
+      "case_id": "ret-006-unknown-product-relaxes-filter",
+      "suite": "retrieval",
+      "description": "A product with no knowledge documents must relax the metadata filter instead of returning nothing (progressive filter relaxation).",
+      "passed": true,
+      "checks": [
+        {
+          "check": "retrieval.kb_coverage",
+          "kind": "presence",
+          "expected": "all expected sources in knowledge base",
+          "actual": "all present",
+          "passed": true
+        },
+        {
+          "check": "retrieval.recall",
+          "kind": "min",
+          "expected": ">= 0.0 (expected sources: ['conv_12926084', 'conv_4c41f58a', 'conv_6a1be39e', 'conv_81150b38', 'conv_871cabec', 'conv_a0ff90ee'])",
+          "actual": "0.00 (retrieved: ['conv_3f1bf8d5', 'conv_028df192', 'conv_87bbead4', 'conv_5e54882e', 'conv_2e1687c5'])",
+          "passed": true
+        },
+        {
+          "check": "retrieval.filter_relaxed",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 0.488993125007255,
+      "error": null,
+      "tokens": null,
+      "metrics": {
+        "recall": 0.0,
+        "precision": 0.0,
+        "hit": 0.0,
+        "mrr": 0.0,
+        "filter_relaxed": 1.0
+      }
+    },
+    {
+      "case_id": "res-001-base-water-leak",
+      "suite": "resolution",
+      "description": "Water leak with dozens of resolved precedents (mostly replacements) — the assistant should ground a replacement recommendation.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "response.grounded",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        },
+        {
+          "check": "response.evidence_strength",
+          "kind": "in_set",
+          "expected": "one of ['moderate', 'strong']",
+          "actual": "moderate",
+          "passed": true
+        },
+        {
+          "check": "response.citations.min",
+          "kind": "count",
+          "expected": ">= 1",
+          "actual": "['KB-3', 'KB-4']",
+          "passed": true
+        },
+        {
+          "check": "response.recommended_actions.min",
+          "kind": "count",
+          "expected": ">= 1",
+          "actual": "2 actions",
+          "passed": true
+        },
+        {
+          "check": "response.recommended_actions",
+          "kind": "keyword_any",
+          "expected": "any of ['replacement', 'replace']",
+          "actual": "['Agent escalated issue to firmware team', 'Agent approved replacement']",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 1.4828010000055656,
+      "error": null,
+      "tokens": {
+        "prompt_tokens": 2057,
+        "output_tokens": 165,
+        "total_tokens": 2222
+      },
+      "metrics": {
+        "raw_citations_valid": 1.0,
+        "grounded_expected_match": 1.0,
+        "evidence_strength_match": 1.0,
+        "downgraded": 0.0
+      }
+    },
+    {
+      "case_id": "res-002-alarm-malfunction",
+      "suite": "resolution",
+      "description": "Unreliable alarm with many resolved precedents — expect a grounded recommendation with citations.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "response.grounded",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        },
+        {
+          "check": "response.evidence_strength",
+          "kind": "in_set",
+          "expected": "one of ['moderate', 'strong']",
+          "actual": "strong",
+          "passed": true
+        },
+        {
+          "check": "response.citations.min",
+          "kind": "count",
+          "expected": ">= 1",
+          "actual": "['KB-1', 'KB-2', 'KB-3', 'KB-4', 'KB-5']",
+          "passed": true
+        },
+        {
+          "check": "response.recommended_actions.min",
+          "kind": "count",
+          "expected": ">= 1",
+          "actual": "4 actions",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 1.5058638329937821,
+      "error": null,
+      "tokens": {
+        "prompt_tokens": 2068,
+        "output_tokens": 223,
+        "total_tokens": 2291
+      },
+      "metrics": {
+        "raw_citations_valid": 1.0,
+        "grounded_expected_match": 1.0,
+        "evidence_strength_match": 1.0,
+        "downgraded": 0.0
+      }
+    },
+    {
+      "case_id": "res-003-hub-condensation-leak",
+      "suite": "resolution",
+      "description": "Hub condensation leak — historical resolutions are batch-defect replacements; expect a grounded replacement path.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "response.grounded",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        },
+        {
+          "check": "response.evidence_strength",
+          "kind": "in_set",
+          "expected": "one of ['weak', 'moderate', 'strong']",
+          "actual": "strong",
+          "passed": true
+        },
+        {
+          "check": "response.citations.min",
+          "kind": "count",
+          "expected": ">= 1",
+          "actual": "['KB-1', 'KB-2', 'KB-3', 'KB-4', 'KB-5']",
+          "passed": true
+        },
+        {
+          "check": "response.recommended_actions.min",
+          "kind": "count",
+          "expected": ">= 1",
+          "actual": "10 actions",
+          "passed": true
+        },
+        {
+          "check": "response.recommended_actions",
+          "kind": "keyword_any",
+          "expected": "any of ['replacement', 'replace']",
+          "actual": "['Arrange for a replacement unit.', 'Send email with instructions for submitting photos/videos.', \"Initiate a replacement process for the customer's unit.\", 'Request photos of the leak.', 'Assure customer you are taking ownership of the case.', 'Identify condensation leak as a seal failure.', 'Confirm the issue was a known problem with a specific batch.', 'Confirm a replacement was approved and provide shipping details.', 'Confirm a solution had been found.', 'Inform customer about the replacement.']",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 1.8762977500009583,
+      "error": null,
+      "tokens": {
+        "prompt_tokens": 2058,
+        "output_tokens": 295,
+        "total_tokens": 2353
+      },
+      "metrics": {
+        "raw_citations_valid": 1.0,
+        "grounded_expected_match": 1.0,
+        "evidence_strength_match": 1.0,
+        "downgraded": 0.0
+      }
+    },
+    {
+      "case_id": "res-004-pod-intermittent-cooling",
+      "suite": "resolution",
+      "description": "Intermittent cooling — resolved precedents exist; expect a grounded recommendation citing them.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "response.grounded",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        },
+        {
+          "check": "response.evidence_strength",
+          "kind": "in_set",
+          "expected": "one of ['moderate', 'strong']",
+          "actual": "strong",
+          "passed": true
+        },
+        {
+          "check": "response.citations.min",
+          "kind": "count",
+          "expected": ">= 1",
+          "actual": "['KB-1', 'KB-2', 'KB-3', 'KB-4']",
+          "passed": true
+        },
+        {
+          "check": "response.recommended_actions.min",
+          "kind": "count",
+          "expected": ">= 1",
+          "actual": "3 actions",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 1.475418375004665,
+      "error": null,
+      "tokens": {
+        "prompt_tokens": 2155,
+        "output_tokens": 198,
+        "total_tokens": 2353
+      },
+      "metrics": {
+        "raw_citations_valid": 1.0,
+        "grounded_expected_match": 1.0,
+        "evidence_strength_match": 1.0,
+        "downgraded": 0.0
+      }
+    },
+    {
+      "case_id": "res-005-subscription-billing",
+      "suite": "resolution",
+      "description": "Unnotified subscription renewal — historical resolutions are refunds/billing adjustments, not hardware replacements.",
+      "passed": true,
+      "checks": [
+        {
+          "check": "response.grounded",
+          "kind": "exact",
+          "expected": "True",
+          "actual": "True",
+          "passed": true
+        },
+        {
+          "check": "response.evidence_strength",
+          "kind": "in_set",
+          "expected": "one of ['weak', 'moderate', 'strong']",
+          "actual": "strong",
+          "passed": true
+        },
+        {
+          "check": "response.citations.min",
+          "kind": "count",
+          "expected": ">= 1",
+          "actual": "['KB-1', 'KB-2', 'KB-5', 'KB-3', 'KB-4']",
+          "passed": true
+        },
+        {
+          "check": "response.recommended_actions",
+          "kind": "keyword_any",
+          "expected": "any of ['refund', 'billing', 'subscription', 'charge']",
+          "actual": "['Agent to investigate billing issues and process refunds.', 'Agent offered to process refunds for incorrect charges.', 'Agent offered to process refunds for unauthorized subscription renewal.']",
+          "passed": true
+        }
+      ],
+      "duration_seconds": 1.452946500008693,
+      "error": null,
+      "tokens": {
+        "prompt_tokens": 1915,
+        "output_tokens": 203,
+        "total_tokens": 2118
+      },
+      "metrics": {
+        "raw_citations_valid": 1.0,
+        "grounded_expected_match": 1.0,
+        "evidence_strength_match": 1.0,
+        "downgraded": 0.0
+      }
+    },
+    {
+      "case_id": "res-006-no-similar-evidence",
+      "suite": "resolution",
+      "description": "An issue unlike anything in the knowledge base — the assistant must answer honestly ungrounded rather than invent a resolution.",
+      "passed": false,
+      "checks": [
+        {
+          "check": "response.grounded",
+          "kind": "exact",
+          "expected": "False",
+          "actual": "True",
+          "passed": false
+        },
+        {
+          "check": "response.evidence_strength",
+          "kind": "in_set",
+          "expected": "one of ['none', 'weak']",
+          "actual": "strong",
+          "passed": false
+        },
+        {
+          "check": "response.citations.max",
+          "kind": "count",
+          "expected": "<= 0",
+          "actual": "['KB-1', 'KB-2', 'KB-3', 'KB-4']",
+          "passed": false
+        }
+      ],
+      "duration_seconds": 1.4999375420011347,
+      "error": null,
+      "tokens": {
+        "prompt_tokens": 2065,
+        "output_tokens": 214,
+        "total_tokens": 2279
+      },
+      "metrics": {
+        "raw_citations_valid": 1.0,
+        "grounded_expected_match": 0.0,
+        "evidence_strength_match": 0.0,
+        "downgraded": 0.0
+      }
+    }
+  ],
+  "baseline": null,
+  "regressions": [],
+  "improvements": [],
+  "previous_run": {
+    "finished_at": "2026-07-04T16:39:48.960890Z",
+    "pass_rate_before": 0.7777777777777778,
+    "pass_rate_after": 0.9444444444444444
+  }
+}

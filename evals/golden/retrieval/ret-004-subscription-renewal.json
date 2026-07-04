@@ -1,0 +1,37 @@
+{
+  "case_id": "ret-004-subscription-renewal",
+  "description": "Billing issue (subscription renewed without notification): the top-5 must all be subscription-renewal sources, never hardware cases (precision over the synonym-category pool). Issue from conv_1580417b.",
+  "issue": {
+    "canonical_name": "subscription renewed without notification",
+    "customer_description": "Subscription renewed without notification. Would have cancelled.",
+    "severity": "low",
+    "confidence": 1.0,
+    "customer_impact": "medium",
+    "product": "Pod 4 Ultra",
+    "symptoms": ["Subscription renewed without notification"],
+    "catalog": {"matched": true, "confidence": 1.0},
+    "resolution_status": "resolved",
+    "resolution_summary": "Agent offered to process refunds for incorrect charges and later confirmed a solution was found for the billing issue."
+  },
+  "limit": 5,
+  "expected_conversation_external_ids": [
+    "conv_003fc688", "conv_010d6b79", "conv_0690c7fc", "conv_06a2f80e", "conv_08dc9f3a",
+    "conv_146cee5b", "conv_1580417b", "conv_1767fe0c", "conv_1af81b5c", "conv_20f97873",
+    "conv_2278a61c", "conv_24720432", "conv_24f66b30", "conv_260e30f6", "conv_2819ea78",
+    "conv_28c20a75", "conv_29156080", "conv_2d9a694f", "conv_2e798a42", "conv_31d2b172",
+    "conv_3bf823f9", "conv_3d0bb51e", "conv_3f20889f", "conv_42e35733", "conv_449c9b04",
+    "conv_44d38fe1", "conv_45b655e5", "conv_4a2defb1", "conv_4bcc5d58", "conv_4d27e63f",
+    "conv_4da05948", "conv_4fafc46d", "conv_502cb258", "conv_57fb7df4", "conv_585603fd",
+    "conv_5d3d1536", "conv_5eaa12f5", "conv_5fbe8189", "conv_63e5e5ac", "conv_64a56d72",
+    "conv_6904e373", "conv_6b1b7b5a", "conv_6b45141a", "conv_7097a9ac", "conv_77cd537f",
+    "conv_7d6de970", "conv_96bbdf70", "conv_9a21f53f", "conv_9adbd469", "conv_9cb6eb5a",
+    "conv_9d393a5d", "conv_9e8665f6", "conv_9f0e8f98", "conv_a3c72d6d", "conv_a7cc7b95",
+    "conv_aaed6c93", "conv_ab912221", "conv_b02bb63f", "conv_c0bca9ed", "conv_c8513474",
+    "conv_c90e45d7", "conv_c9d1d82b", "conv_cab6d4e7", "conv_cb1d3ad8", "conv_cc8f9292",
+    "conv_cf5f8027", "conv_d0198f2c", "conv_d2ad2c89", "conv_d2e27295", "conv_d7ede3e9",
+    "conv_d985c3d1", "conv_db2e6d54", "conv_e12d8723", "conv_e30d434c", "conv_e4409b28",
+    "conv_e96c18de", "conv_e9855963", "conv_ebba49fc", "conv_ec534e60", "conv_ff4fb4b5"
+  ],
+  "min_recall": 0.0,
+  "min_precision": 0.8
+}

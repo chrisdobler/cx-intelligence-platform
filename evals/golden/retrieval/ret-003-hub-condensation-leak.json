@@ -1,0 +1,35 @@
+{
+  "case_id": "ret-003-hub-condensation-leak",
+  "description": "Hub condensation leak: the top-5 must all be condensation-leak sources (the relevant pool spans several synonym catalog categories, so precision is the meaningful bar). Issue from conv_28f38679.",
+  "issue": {
+    "canonical_name": "hub condensation leak",
+    "customer_description": "Condensation dripping from hub and tubes. Getting worse each day.",
+    "severity": "high",
+    "confidence": 1.0,
+    "customer_impact": "high",
+    "product": "Pod 4",
+    "symptoms": [
+      "Condensation dripping from hub and tubes",
+      "Getting worse each day"
+    ],
+    "catalog": {"matched": false, "confidence": 1.0},
+    "resolution_status": "resolved",
+    "resolution_summary": "A replacement unit was initiated due to a known issue with the product batch."
+  },
+  "limit": 5,
+  "expected_conversation_external_ids": [
+    "conv_003b2612", "conv_01f6e199", "conv_02415752", "conv_0ba22deb", "conv_104b353b",
+    "conv_162a30c3", "conv_1af77b21", "conv_1afbc4ee", "conv_21321a85", "conv_21b61fb0",
+    "conv_28f38679", "conv_2de8b63c", "conv_35e77dc9", "conv_3a9dc36b", "conv_3c0a8224",
+    "conv_42902df8", "conv_43dd2cf1", "conv_453d9629", "conv_4564a0c6", "conv_4b27de38",
+    "conv_56bae1d2", "conv_64b59035", "conv_6831e521", "conv_6db4301f", "conv_72bc450e",
+    "conv_85b72b3b", "conv_8a0f5243", "conv_9467d4e4", "conv_9ee97c56", "conv_a1b551ea",
+    "conv_a5383505", "conv_a9465fd8", "conv_adebbea5", "conv_afbc0181", "conv_b140e58a",
+    "conv_b5b9f45a", "conv_be3efeac", "conv_c516bb28", "conv_d67f3806", "conv_e36eef8d",
+    "conv_e5b7f0d0", "conv_e61fc6e5", "conv_e664502c", "conv_e841d7fc", "conv_ea8b2897",
+    "conv_eacebf42", "conv_eb512c57", "conv_ef7a6f27", "conv_f0b760bb", "conv_f718594b",
+    "conv_f96c241c", "conv_fa659b06", "conv_fcf62f81"
+  ],
+  "min_recall": 0.0,
+  "min_precision": 0.8
+}

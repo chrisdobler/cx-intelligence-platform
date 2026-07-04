@@ -228,3 +228,45 @@ def test_factory_requires_configured_provider(monkeypatch: pytest.MonkeyPatch) -
             get_llm_provider()
     finally:
         get_settings.cache_clear()
+
+
+# --- Phase 7 observability side-channel -------------------------------------
+
+
+class _Usage:
+    prompt_token_count = 90
+    candidates_token_count = 10
+    total_token_count = 100
+
+
+class RichFakeResponse(FakeResponse):
+    """A response carrying usage metadata and a response-level model version."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__(text)
+        self.usage_metadata = _Usage()
+        self.model_version = "gemini-2.5-flash-042"
+
+
+def test_extract_captures_usage_and_model_version() -> None:
+    provider, models = make_provider([])
+    rich = RichFakeResponse('{"name": "leak", "score": 0.9}')
+    models.generate_content = lambda *, model, contents, config: rich  # type: ignore[method-assign]
+    assert provider.last_usage is None
+    assert provider.last_model_version is None
+
+    provider.extract("p", Extraction)
+    usage = provider.last_usage
+    assert usage is not None
+    assert (usage.prompt_tokens, usage.output_tokens, usage.total_tokens) == (90, 10, 100)
+    assert provider.last_model_version == "gemini-2.5-flash-042"
+
+
+def test_extract_without_usage_metadata_degrades_to_none_tokens() -> None:
+    provider, _ = make_provider(['{"name": "leak", "score": 0.9}'])
+    provider.extract("p", Extraction)
+    usage = provider.last_usage
+    assert usage is not None
+    assert usage.prompt_tokens is None and usage.total_tokens is None
+    # No response-level version → the configured model is the fallback.
+    assert provider.last_model_version == "gemini-2.5-flash"

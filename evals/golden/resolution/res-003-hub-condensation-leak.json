@@ -1,0 +1,27 @@
+{
+  "case_id": "res-003-hub-condensation-leak",
+  "description": "Hub condensation leak — historical resolutions are batch-defect replacements; expect a grounded replacement path.",
+  "issue": {
+    "canonical_name": "hub condensation leak",
+    "customer_description": "Condensation dripping from hub and tubes. Getting worse each day.",
+    "severity": "high",
+    "confidence": 1.0,
+    "customer_impact": "high",
+    "product": "Pod 4",
+    "symptoms": [
+      "Condensation dripping from hub and tubes",
+      "Getting worse each day"
+    ],
+    "catalog": {"matched": true, "confidence": 1.0},
+    "resolution_status": "unresolved",
+    "resolution_summary": null
+  },
+  "limit": 5,
+  "expected": {
+    "grounded": true,
+    "evidence_strength_in": ["weak", "moderate", "strong"],
+    "min_citations": 1,
+    "min_recommended_actions": 1,
+    "actions_any_keywords": ["replacement", "replace"]
+  }
+}

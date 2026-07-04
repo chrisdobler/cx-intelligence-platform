@@ -1,0 +1,23 @@
+{
+  "case_id": "res-005-subscription-billing",
+  "description": "Unnotified subscription renewal — historical resolutions are refunds/billing adjustments, not hardware replacements.",
+  "issue": {
+    "canonical_name": "subscription renewed without notification",
+    "customer_description": "Subscription renewed without notification. Would have cancelled.",
+    "severity": "low",
+    "confidence": 1.0,
+    "customer_impact": "medium",
+    "product": "Pod 4 Ultra",
+    "symptoms": ["Subscription renewed without notification"],
+    "catalog": {"matched": true, "confidence": 1.0},
+    "resolution_status": "unresolved",
+    "resolution_summary": null
+  },
+  "limit": 5,
+  "expected": {
+    "grounded": true,
+    "evidence_strength_in": ["weak", "moderate", "strong"],
+    "min_citations": 1,
+    "actions_any_keywords": ["refund", "billing", "subscription", "charge"]
+  }
+}

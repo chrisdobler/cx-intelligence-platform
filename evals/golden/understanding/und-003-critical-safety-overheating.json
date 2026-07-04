@@ -1,0 +1,62 @@
+{
+  "case_id": "und-003-critical-safety-overheating",
+  "description": "Critical safety escalation: dangerously hot hub with burning smell; replacement arranged but conversation ends awaiting follow-up. Verbatim conv_a95597ab.",
+  "conversation": {
+    "product": "Pod 4",
+    "category": "hardware",
+    "priority": "high",
+    "status": "escalated"
+  },
+  "messages": [
+    {
+      "role": "customer",
+      "body": "Hub surface temperature dangerously high. Smells like burning plastic."
+    },
+    {
+      "role": "agent",
+      "body": "I'm very concerned about what you're describing. This is NOT normal. Please unplug immediately. I'm marking this as critical safety and escalating to hardware safety team. We'll arrange immediate replacement with expedited shipping."
+    },
+    {
+      "role": "customer",
+      "body": "Just wanted to follow up on this. It's been 3 days since my last message with no response."
+    },
+    {
+      "role": "agent",
+      "body": "I'm going to send you an email with detailed instructions. Please follow the steps and let me know results."
+    },
+    {
+      "role": "customer",
+      "body": "Still waiting on the escalation from last time. Any update?"
+    },
+    {
+      "role": "agent",
+      "body": "I've checked with our hardware team and they've confirmed this is a known issue with a specific batch. We'll be sending you a replacement."
+    },
+    {
+      "role": "customer",
+      "body": "Thanks for looking into this. How long should I expect to wait for resolution?"
+    },
+    {
+      "role": "agent",
+      "body": "Thank you for the additional details. Very helpful for our investigation. I've added your notes to the case file."
+    }
+  ],
+  "expected": {
+    "issues": [
+      {
+        "canonical_name": "hub overheating with burning smell",
+        "canonical_name_aliases": [
+          "hub overheating and burning smell",
+          "hub overheating",
+          "critical hub safety issue",
+          "hub overheating and shutdown"
+        ],
+        "severity_in": ["high", "critical"],
+        "product": "Pod 4",
+        "symptoms_any": ["burning", "hot", "temperature"],
+        "min_confidence": 0.7
+      }
+    ],
+    "requires_replacement": true
+  }
+}

@@ -25,6 +25,7 @@ from .models import (
     ConversationAnalysis,
     ConversationIssue,
     ConversationUnderstandingFailure,
+    EvaluationRun,
     IssueCatalogEntry,
     KnowledgeDocumentRecord,
     LLMCallObservation,
@@ -80,6 +81,15 @@ class ConversationRepository:
         return self._session.execute(
             select(Conversation).where(Conversation.external_id == external_id)
         ).scalar_one_or_none()
+
+    def external_ids_by_ids(self, ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str]:
+        """Map conversation ids to their stable external ids."""
+        if not ids:
+            return {}
+        rows = self._session.execute(
+            select(Conversation.id, Conversation.external_id).where(Conversation.id.in_(list(ids)))
+        )
+        return dict(rows.tuples().all())
 
     def days(self) -> list[int]:
         """Distinct dataset days in ascending order."""
@@ -601,6 +611,33 @@ class AnomalyStageObservationRepository:
         )
 
 
+class EvaluationRunRepository:
+    """Persistence for :class:`EvaluationRun` rows — the Phase 7 evaluation history."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, run: EvaluationRun) -> None:
+        self._session.add(run)
+
+    def count(self) -> int:
+        return self._session.execute(select(func.count()).select_from(EvaluationRun)).scalar_one()
+
+    def latest(self) -> EvaluationRun | None:
+        """The most recent evaluation run, if any."""
+        return self._session.execute(
+            select(EvaluationRun).order_by(EvaluationRun.started_at.desc()).limit(1)
+        ).scalar_one_or_none()
+
+    def recent(self, limit: int = 20) -> list[EvaluationRun]:
+        """The most recent evaluation runs, newest first."""
+        return list(
+            self._session.execute(
+                select(EvaluationRun).order_by(EvaluationRun.started_at.desc()).limit(limit)
+            ).scalars()
+        )
+
+
 class KnowledgeDocumentRepository:
     """Persistence + vector search for :class:`KnowledgeDocumentRecord` rows."""
 
@@ -618,6 +655,19 @@ class KnowledgeDocumentRepository:
                 select(KnowledgeDocumentRecord).order_by(
                     KnowledgeDocumentRecord.issue, KnowledgeDocumentRecord.id
                 )
+            ).scalars()
+        )
+
+    def source_external_ids(self) -> set[str]:
+        """External ids of every conversation with at least one knowledge document."""
+        return set(
+            self._session.execute(
+                select(Conversation.external_id)
+                .join(
+                    KnowledgeDocumentRecord,
+                    KnowledgeDocumentRecord.conversation_id == Conversation.id,
+                )
+                .distinct()
             ).scalars()
         )
 

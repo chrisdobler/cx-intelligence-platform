@@ -1,0 +1,26 @@
+{
+  "case_id": "res-004-pod-intermittent-cooling",
+  "description": "Intermittent cooling — resolved precedents exist; expect a grounded recommendation citing them.",
+  "issue": {
+    "canonical_name": "pod intermittent cooling",
+    "customer_description": "Pod gets ice cold for 10 min then goes back to neutral.",
+    "severity": "medium",
+    "confidence": 1.0,
+    "customer_impact": "high",
+    "product": "Pod 3 Cover",
+    "symptoms": [
+      "Pod gets ice cold for 10 min then goes back to neutral.",
+      "The issue is intermittent - happens maybe 3 out of 5 nights."
+    ],
+    "catalog": {"matched": true, "confidence": 1.0},
+    "resolution_status": "unresolved",
+    "resolution_summary": null
+  },
+  "limit": 5,
+  "expected": {
+    "grounded": true,
+    "evidence_strength_in": ["moderate", "strong"],
+    "min_citations": 1,
+    "min_recommended_actions": 1
+  }
+}

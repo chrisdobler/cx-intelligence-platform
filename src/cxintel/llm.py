@@ -11,6 +11,7 @@ be persisted.
 from __future__ import annotations
 
 import re
+import threading
 import time
 from collections.abc import Callable
 from enum import StrEnum
@@ -104,6 +105,20 @@ class LLMProvider(Protocol):
         ...
 
 
+class LLMUsage(BaseModel):
+    """Token usage of one successful ``extract`` call (Phase 7 observability).
+
+    Providers expose this as a ``last_usage`` attribute rather than a return
+    value so the frozen ``LLMProvider.extract`` contract — and every existing
+    fake — stays unchanged. Callers read it with
+    ``getattr(provider, "last_usage", None)`` right after a call.
+    """
+
+    prompt_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+
+
 _RETRY_DELAY_PATTERN = re.compile(r"retry in ([0-9.]+)s", re.IGNORECASE)
 _MAX_RETRY_SLEEP = 65.0
 
@@ -155,6 +170,18 @@ class GoogleProvider:
         # shrink these so a quota outage degrades in seconds, not minutes.
         self._max_transient_attempts = max_transient_attempts
         self._max_retry_sleep = max_retry_sleep
+        # Observability side-channel (Phase 7): refreshed on every successful
+        # extract. Thread-local because one provider serves a concurrent
+        # worker pool — each worker must see its own call's usage.
+        self._observability = threading.local()
+
+    @property
+    def last_usage(self) -> LLMUsage | None:
+        return getattr(self._observability, "usage", None)
+
+    @property
+    def last_model_version(self) -> str | None:
+        return getattr(self._observability, "model_version", None)
 
     def extract(
         self, prompt: str, schema: type[T], on_retry: RetryCallback | None = None
@@ -175,7 +202,17 @@ class GoogleProvider:
                 response = self._client.models.generate_content(
                     model=self._model, contents=prompt, config=config
                 )
-                return schema.model_validate_json(response.text or "")
+                validated = schema.model_validate_json(response.text or "")
+                usage = getattr(response, "usage_metadata", None)
+                self._observability.usage = LLMUsage(
+                    prompt_tokens=getattr(usage, "prompt_token_count", None),
+                    output_tokens=getattr(usage, "candidates_token_count", None),
+                    total_tokens=getattr(usage, "total_token_count", None),
+                )
+                self._observability.model_version = (
+                    getattr(response, "model_version", None) or self._model
+                )
+                return validated
             except ValidationError as exc:
                 last_error = exc
                 validation_failures += 1

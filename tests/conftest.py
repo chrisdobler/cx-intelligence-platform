@@ -57,11 +57,13 @@ def settings_on_test_db(migrated_engine: Engine, monkeypatch: pytest.MonkeyPatch
     For tests that exercise code resolving the DB through ``get_settings()`` —
     the CLI and the status API — rather than taking an explicit session.
     """
-    from cxintel.config import get_settings
+    from cxintel.config import DEFAULT_LLM_MODEL, get_settings
     from cxintel.db import get_engine, get_session_factory
 
     monkeypatch.setenv("DATABASE_URL", _TEST_URL)
-    monkeypatch.delenv("LLM_MODEL", raising=False)
+    # Pin the default explicitly: an env var outranks the developer's .env,
+    # so a local LLM_MODEL override can't leak into the tests.
+    monkeypatch.setenv("LLM_MODEL", DEFAULT_LLM_MODEL)
     get_settings.cache_clear()
     get_engine.cache_clear()
     get_session_factory.cache_clear()
@@ -86,6 +88,7 @@ def db_session(migrated_engine: Engine) -> Iterator[Session]:
     try:
         with migrated_engine.connect() as conn:
             for table in (
+                "evaluation_runs",
                 "conversation_understanding_failures",
                 "anomaly_stage_observations",
                 "llm_call_observations",
