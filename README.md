@@ -7,15 +7,17 @@ retrieval-augmented generation (RAG).
 - **Design:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - **Plan / status:** [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
 
-> **Status: Phase 4 (Anomaly Detection) complete.**
+> **Status: Phase 5 (Knowledge Base) complete.**
 > The dataset ingests idempotently, Gemini extracts the canonical Structured
 > Conversation Object per conversation (issue catalog derived from the Day-1
-> baseline), and a deterministic multi-signal rules engine detects anomalies
-> — volume spikes, novel issues, severity drift, resolution drift — with
-> Slack alerts and an anomaly report generated from the canonical anomalies.
+> baseline), a deterministic multi-signal rules engine detects anomalies
+> (volume spikes, novel issues, severity drift, resolution drift) with Slack
+> alerts and a report, and every resolved issue is deterministically distilled
+> into a KnowledgeDocument, embedded with pgvector, and retrievable via
+> metadata-first semantic search — no second LLM call (ADR-014).
 > Every pipeline stage is an independent job runnable from the landing page,
-> the CLI, or the REST API. The remaining AI stages (knowledge base,
-> resolution assistant) land in Phases 5–6. See the plan for the roadmap.
+> the CLI, or the REST API. The Resolution Assistant lands in Phase 6. See
+> the plan for the roadmap.
 
 ## Prerequisites
 
@@ -102,6 +104,7 @@ Endpoints:
 | `GET /api/pipeline/runs` | Pipeline audit trail — recent stage runs, newest first |
 | `GET /api/anomalies` | Detected anomalies (canonical artifact: signals, metrics, actions) |
 | `GET /api/anomalies/report` | The anomaly report, rendered from persisted anomalies (markdown) |
+| `GET /api/knowledge/search` | Metadata-first semantic search over the knowledge base (`q`, `product`, `limit`) |
 | `/api/config` | Non-secret configuration (secrets reported only as set/unset) |
 | `POST /api/config/google-key` | Save the Google AI Studio key from the onboarding card |
 | `http://localhost:8080` | Adminer database UI (auto-login to dev database `cx`) |
@@ -126,7 +129,7 @@ src/cxintel/
   llm.py             # provider abstraction (Google AI Studio, native structured output)
   understanding/     # Phase 3  — StructuredConversation schema, Prompt #1, service
   anomaly/           # Phase 4  — deterministic detector, Prompt #3, service, report
-  knowledge_base/    # Phase 5  (placeholder)
+  knowledge_base/    # Phase 5  — KnowledgeDocument, knowledge_text, embeddings, retrieval
   resolution_assistant/ # Phase 6 (placeholder)
 tests/               # foundation + API smoke tests
 docker/Dockerfile    # pgvector image + baked-in init scripts
@@ -156,7 +159,8 @@ data/raw/            # place sample_tickets_v6.json here (git-ignored)
 | `understand` | Run conversation understanding on a sample of 100 (see `app understand --full`) |
 | `bottlenecks` | Show slow per-conversation LLM observations from understanding runs |
 | `analyze` | Run deterministic anomaly detection vs the Day-1 baseline |
-| `build-kb` / `chat` | Stage passthroughs (stubs until Phases 5–6) |
+| `build-kb` | Build the retrieval knowledge base (deterministic docs + embeddings) |
+| `chat` | Stage passthrough (stub until Phase 6) |
 
 ## CLI (`app`)
 
@@ -171,11 +175,13 @@ app understand --full  # process every remaining conversation (~10k LLM calls)
 app stats          # ingestion statistics — verifies the import
 app analyze        # deterministic anomaly detection vs the Day-1 baseline
 app report         # print the anomaly report (from persisted anomalies)
+app build-kb       # build the knowledge base (resumable; re-embeds only changes)
+app search "pod leaking water" --product "Pod 5"  # semantic knowledge search
 app pipeline       # run every incomplete pipeline stage in dependency order
 app runs           # pipeline audit trail — recent stage runs, newest first
 app bottlenecks --sort llm_seconds  # slowest LLM observations by phase timing
 # Stubs until their phase:
-app build-kb | app chat
+app chat
 ```
 
 ## Configuration

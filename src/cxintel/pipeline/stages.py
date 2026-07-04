@@ -147,8 +147,9 @@ def _anomaly_count(session: Session) -> int:
 
 
 def _embedding_count(session: Session) -> int:
-    # Phase 5 replaces this with a real count once the embedding tables exist.
-    return 0
+    from ..repositories import KnowledgeDocumentRepository
+
+    return KnowledgeDocumentRepository(session).count()
 
 
 class IngestStage(PipelineStage):
@@ -294,16 +295,18 @@ class UnderstandStage(PipelineStage):
 
 
 class KnowledgeBaseStage(PipelineStage):
-    """Phase 5 — embed resolved conversations for semantic retrieval."""
+    """Phase 5 — deterministic knowledge synthesis + embeddings for retrieval."""
 
     key = "knowledge_base"
     label = "Knowledge Base"
     description = (
-        "Embed resolved conversation summaries with pgvector so similar "
-        "historical cases can be retrieved semantically."
+        "Deterministically distill every resolved issue into a KnowledgeDocument, "
+        "render its knowledge_text, and embed it with pgvector for semantic "
+        "retrieval. No LLM — only the embedding model. Reruns re-embed only new "
+        "or changed documents."
     )
-    outputs = ("embeddings",)
-    planned_phase = "Phase 5"
+    outputs = ("knowledge documents", "embeddings")
+    implemented = True
 
     def is_complete(self, session: Session | None) -> bool:
         return bool(_count_or_none(session, _embedding_count))
@@ -318,6 +321,33 @@ class KnowledgeBaseStage(PipelineStage):
             ),
             _ai_prerequisite(),
         ]
+
+    def run(
+        self,
+        session_factory: sessionmaker[Session],
+        progress: ProgressCallback,
+        option: str | None = None,
+        run_id: uuid.UUID | None = None,
+    ) -> str:
+        from alembic import command
+        from alembic.config import Config
+
+        from ..knowledge_base.service import KnowledgeBaseService
+        from ..llm import get_embedding_provider
+
+        reporter = ProgressReporter(
+            stage_key=self.key,
+            stage_label=self.label,
+            progress=progress,
+            message="Applying database migrations…",
+        )
+        command.upgrade(Config("alembic.ini"), "head")
+
+        reporter.report(message="Building the knowledge base…")
+        service = KnowledgeBaseService(
+            session_factory, get_embedding_provider(), pipeline_run_id=run_id
+        )
+        return service.run(progress=reporter).summary()
 
 
 class AnomalyStage(PipelineStage):

@@ -78,10 +78,10 @@ def test_run_unknown_stage_returns_404() -> None:
     assert client.post("/api/pipeline/nope/run").status_code == 404
 
 
-def test_run_unimplemented_stage_returns_422() -> None:
+def test_run_knowledge_base_blocked_without_ai_key() -> None:
     response = client.post("/api/pipeline/knowledge_base/run")
     assert response.status_code == 422
-    assert "Phase 5" in response.json()["detail"]
+    assert "GOOGLE_API_KEY" in response.json()["detail"]
 
 
 def test_run_understand_blocked_without_ai_key() -> None:

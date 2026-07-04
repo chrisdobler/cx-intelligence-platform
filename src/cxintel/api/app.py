@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from .. import __version__
 from ..config import get_settings, set_env_key
 from ..db import check_health
+from ..knowledge_base.retrieval import RetrievedKnowledge
 from ..pipeline import orchestrator
 from ..pipeline.jobs import TRACKER, Job, JobBusyError, JobState
 from ..pipeline.orchestrator import (
@@ -165,6 +166,34 @@ def api_anomaly_report() -> str:
             return render_report(AnomalyRepository(session).all())
     except Exception:
         return "# Anomaly Report\n\nDatabase unavailable.\n"
+
+
+@app.get("/api/knowledge/search")
+def api_knowledge_search(
+    q: str = Query(min_length=1, description="Natural-language problem description."),
+    product: str | None = Query(default=None),
+    limit: int = Query(default=5, ge=1, le=20),
+) -> list[RetrievedKnowledge]:
+    """Metadata-first semantic search over the knowledge base.
+
+    Returns [] when the knowledge base is empty; 422 when AI is unconfigured
+    (the query itself must be embedded); 503 when the database is unreachable.
+    """
+    from ..db import get_session_factory
+    from ..knowledge_base.retrieval import retrieve
+    from ..llm import LLMExtractionError, get_embedding_provider
+
+    try:
+        embedder = get_embedding_provider()
+    except LLMExtractionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        with get_session_factory()() as session:
+            return retrieve(session, embedder, q, product=product, limit=limit)
+    except LLMExtractionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
 
 
 @app.get("/api/pipeline/llm-observations")

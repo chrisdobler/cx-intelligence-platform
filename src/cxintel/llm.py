@@ -213,6 +213,119 @@ class GoogleProvider:
         ) from last_error
 
 
+class EmbeddingProvider(Protocol):
+    """The single embedding capability the platform needs (Phase 5)."""
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed retrieval documents; one vector per input text."""
+        ...
+
+    def embed_query(self, text: str) -> list[float]:
+        """Embed one retrieval query."""
+        ...
+
+
+_EMBED_BATCH_SIZE = 100  # texts per embed_content request
+
+
+class GoogleEmbeddingProvider:
+    """Google AI Studio embeddings (gemini-embedding-001).
+
+    Documents and queries use their matching task types so the model places
+    them in the same retrieval space. Transient API errors (429/500/503) and
+    transport failures share the same bounded retry budget as
+    :class:`GoogleProvider`, honouring the server's suggested retry delay.
+    """
+
+    def __init__(
+        self, client: Client, model: str, dimensions: int, backoff_seconds: float = 2.0
+    ) -> None:
+        self._client = client
+        self._model = model
+        self._dimensions = dimensions
+        self._backoff_seconds = backoff_seconds
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), _EMBED_BATCH_SIZE):
+            batch = texts[start : start + _EMBED_BATCH_SIZE]
+            vectors.extend(self._embed(batch, task_type="RETRIEVAL_DOCUMENT"))
+        return vectors
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._embed([text], task_type="RETRIEVAL_QUERY")[0]
+
+    def _embed(self, texts: list[str], *, task_type: str) -> list[list[float]]:
+        from google.genai import errors, types
+
+        config = types.EmbedContentConfig(
+            task_type=task_type, output_dimensionality=self._dimensions
+        )
+        last_error: Exception | None = None
+        transient_failures = 0
+        while transient_failures < _MAX_TRANSIENT_ATTEMPTS:
+            try:
+                response = self._client.models.embed_content(
+                    model=self._model, contents=texts, config=config
+                )
+                return [list(e.values or []) for e in response.embeddings or []]
+            except errors.APIError as exc:
+                if exc.code not in _TRANSIENT_CODES:
+                    raise PermanentLLMExtractionError(
+                        f"Google AI embedding request failed: {exc}",
+                        category=LLMFailureCategory.PERMANENT_API,
+                        attempts=transient_failures + 1,
+                    ) from exc
+                last_error = exc
+                transient_failures += 1
+                if transient_failures < _MAX_TRANSIENT_ATTEMPTS:
+                    delay = _suggested_delay(exc)
+                    if delay is None:
+                        delay = self._backoff_seconds * (2 ** (transient_failures - 1))
+                    time.sleep(delay)
+            except Exception as exc:
+                if not _is_transport_error(exc):
+                    raise
+                last_error = exc
+                transient_failures += 1
+                if transient_failures < _MAX_TRANSIENT_ATTEMPTS:
+                    time.sleep(self._backoff_seconds * (2 ** (transient_failures - 1)))
+        category = (
+            LLMFailureCategory.TRANSPORT
+            if last_error is not None and _is_transport_error(last_error)
+            else LLMFailureCategory.TRANSIENT_API
+        )
+        raise RetryableLLMExtractionError(
+            f"No embeddings after {transient_failures} attempts: {last_error}",
+            category=category,
+            attempts=transient_failures,
+        ) from last_error
+
+
+def get_embedding_provider() -> EmbeddingProvider:
+    """The configured embedding provider (test seam — monkeypatch this in tests)."""
+    from .config import get_settings
+
+    settings = get_settings()
+    if settings.embedding_provider != "google":
+        raise PermanentLLMExtractionError(
+            f"Unsupported embedding provider '{settings.embedding_provider}'.",
+            category=LLMFailureCategory.CONFIGURATION,
+        )
+    if not settings.ai_configured:
+        raise PermanentLLMExtractionError(
+            "Google AI is not configured — set GOOGLE_API_KEY (see the AI Capabilities card).",
+            category=LLMFailureCategory.CONFIGURATION,
+        )
+    from google import genai
+
+    return GoogleEmbeddingProvider(
+        client=genai.Client(api_key=settings.google_api_key),
+        model=settings.embedding_model,
+        dimensions=settings.embedding_dim,
+    )
+
+
 def get_llm_provider() -> LLMProvider:
     """The configured provider (test seam — monkeypatch this in tests)."""
     from .config import get_settings

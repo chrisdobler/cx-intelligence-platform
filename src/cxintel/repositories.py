@@ -25,6 +25,7 @@ from .models import (
     ConversationIssue,
     ConversationUnderstandingFailure,
     IssueCatalogEntry,
+    KnowledgeDocumentRecord,
     LLMCallObservation,
     Message,
     PipelineRun,
@@ -210,6 +211,16 @@ class ConversationAnalysisRepository:
 
     def get(self, conversation_id: uuid.UUID) -> ConversationAnalysis | None:
         return self._session.get(ConversationAnalysis, conversation_id)
+
+    def conversation_ids(self) -> list[uuid.UUID]:
+        """Every analyzed conversation id, in a stable order."""
+        return list(
+            self._session.execute(
+                select(ConversationAnalysis.conversation_id).order_by(
+                    ConversationAnalysis.conversation_id
+                )
+            ).scalars()
+        )
 
 
 class ConversationUnderstandingFailureRepository:
@@ -491,6 +502,64 @@ class LLMCallObservationRepository:
                 stmt.order_by(sort_column.desc(), LLMCallObservation.started_at.desc()).limit(limit)
             ).scalars()
         )
+
+
+class KnowledgeDocumentRepository:
+    """Persistence + vector search for :class:`KnowledgeDocumentRecord` rows."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def count(self) -> int:
+        return self._session.execute(
+            select(func.count()).select_from(KnowledgeDocumentRecord)
+        ).scalar_one()
+
+    def all(self) -> list[KnowledgeDocumentRecord]:
+        return list(
+            self._session.execute(
+                select(KnowledgeDocumentRecord).order_by(
+                    KnowledgeDocumentRecord.issue, KnowledgeDocumentRecord.id
+                )
+            ).scalars()
+        )
+
+    def for_conversation(self, conversation_id: uuid.UUID) -> list[KnowledgeDocumentRecord]:
+        return list(
+            self._session.execute(
+                select(KnowledgeDocumentRecord)
+                .where(KnowledgeDocumentRecord.conversation_id == conversation_id)
+                .order_by(KnowledgeDocumentRecord.issue, KnowledgeDocumentRecord.id)
+            ).scalars()
+        )
+
+    def replace_for_conversation(
+        self, conversation_id: uuid.UUID, rows: Sequence[KnowledgeDocumentRecord]
+    ) -> None:
+        """Regenerate one conversation's documents (derived data — delete + insert)."""
+        self._session.query(KnowledgeDocumentRecord).filter(
+            KnowledgeDocumentRecord.conversation_id == conversation_id
+        ).delete()
+        self._session.add_all(rows)
+
+    def search(
+        self,
+        embedding: Sequence[float],
+        *,
+        product: str | None = None,
+        limit: int = 5,
+    ) -> list[tuple[KnowledgeDocumentRecord, float]]:
+        """Nearest documents by cosine distance, optionally metadata-filtered.
+
+        Every stored document is resolved by construction, so 'resolved only'
+        needs no filter here. The caller owns filter-relaxation policy.
+        """
+        distance = KnowledgeDocumentRecord.embedding.cosine_distance(list(embedding))
+        stmt = select(KnowledgeDocumentRecord, distance)
+        if product is not None:
+            stmt = stmt.where(KnowledgeDocumentRecord.product == product)
+        stmt = stmt.order_by(distance, KnowledgeDocumentRecord.id).limit(limit)
+        return [(row, float(dist)) for row, dist in self._session.execute(stmt).tuples()]
 
 
 class AnomalyRepository:

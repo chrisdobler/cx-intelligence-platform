@@ -14,9 +14,12 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+EMBEDDING_DIM = 3072  # gemini-embedding-001 native dimensionality (fixed at migration time)
 
 
 class Base(DeclarativeBase):
@@ -216,6 +219,29 @@ class ConversationUnderstandingFailure(Base):
     retry_count: Mapped[int] = mapped_column(Integer)
     first_failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class KnowledgeDocumentRecord(Base):
+    """One embedded KnowledgeDocument — the Phase 5 retrieval artifact.
+
+    Derived data: regenerated from ``ConversationAnalysis.analysis_json`` by
+    deterministic code (ADR-014). ``document`` holds the canonical
+    KnowledgeDocument JSON, ``knowledge_text`` the exact deterministic
+    rendering that was embedded, and ``embedding`` its vector. One row per
+    successfully resolved issue.
+    """
+
+    __tablename__ = "knowledge_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"), index=True)
+    issue: Mapped[str] = mapped_column(String, index=True)
+    product: Mapped[str] = mapped_column(String, index=True)
+    document: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    knowledge_text: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM))
+    embedding_model: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class Anomaly(Base):

@@ -185,8 +185,47 @@ def report() -> None:
 
 @app.command("build-kb")
 def build_kb() -> None:
-    """Embed resolved conversations into the knowledge base (Phase 5)."""
-    _not_implemented("knowledge_base")
+    """Build the retrieval knowledge base from resolved issues (deterministic + embeddings)."""
+    from .pipeline.orchestrator import run_stage
+
+    try:
+        summary = run_stage("knowledge_base", progress=typer.echo, trigger="cli")
+    except Exception as exc:
+        typer.secho(f"knowledge base build failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+    typer.secho(summary, fg=typer.colors.GREEN)
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Natural-language description of the problem."),
+    product: str | None = typer.Option(None, help="Restrict results to one product."),
+    limit: int = typer.Option(5, help="Maximum number of results."),
+) -> None:
+    """Semantic search over the knowledge base (metadata-first retrieval)."""
+    from .db import get_session_factory
+    from .knowledge_base.retrieval import retrieve
+    from .llm import get_embedding_provider
+
+    try:
+        with get_session_factory()() as session:
+            results = retrieve(
+                session, get_embedding_provider(), query, product=product, limit=limit
+            )
+    except Exception as exc:
+        typer.secho(f"search unavailable: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    if not results:
+        typer.secho("No knowledge documents found — run 'app build-kb' first.", fg="yellow")
+        raise typer.Exit(code=1)
+
+    for hit in results:
+        typer.secho(
+            f"{hit.issue} (product: {hit.product}, distance: {hit.distance:.3f})", bold=True
+        )
+        typer.echo(hit.knowledge_text)
+        typer.echo("")
 
 
 @app.command()

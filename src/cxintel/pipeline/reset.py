@@ -15,7 +15,7 @@ from ..repositories import PipelineRunRepository
 RESET_DERIVED_STAGE_KEY = "reset_derived"
 RESET_DERIVED_SUMMARY = (
     "Reset derived AI artifacts: conversation analyses, conversation issues, "
-    "issue catalog, anomalies cleared."
+    "issue catalog, anomalies, knowledge documents cleared."
 )
 
 _TRUNCATE_DERIVED_SQL = text(
@@ -24,7 +24,8 @@ _TRUNCATE_DERIVED_SQL = text(
         conversation_issues,
         conversation_analyses,
         issue_catalog,
-        anomalies
+        anomalies,
+        knowledge_documents
     RESTART IDENTITY CASCADE
     """
 )

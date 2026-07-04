@@ -115,7 +115,8 @@ def test_real_registry_has_five_stages_in_order() -> None:
     assert by_key["understand"].planned_phase is None
     assert by_key["anomaly"].implemented is True  # Phase 4 delivered
     assert by_key["anomaly"].planned_phase is None
-    assert by_key["knowledge_base"].implemented is False
+    assert by_key["knowledge_base"].implemented is True  # Phase 5 delivered
+    assert by_key["knowledge_base"].planned_phase is None
     assert by_key["resolution_assistant"].kind == StageKind.INTERACTIVE
     # Understanding exposes the two explicit run options (sample is default).
     understand_options = [(o.value, o.label) for o in by_key["understand"].run_options]

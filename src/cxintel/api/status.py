@@ -112,6 +112,7 @@ def _ingest_metrics() -> Metrics:
         ConversationIssueRepository,
         ConversationRepository,
         IssueCatalogRepository,
+        KnowledgeDocumentRepository,
     )
 
     try:
@@ -121,6 +122,7 @@ def _ingest_metrics() -> Metrics:
                 processed_conversations=ConversationAnalysisRepository(session).count(),
                 conversation_issue_count=ConversationIssueRepository(session).count(),
                 issue_catalog_count=IssueCatalogRepository(session).count(),
+                embedding_count=KnowledgeDocumentRepository(session).count(),
                 anomaly_count=AnomalyRepository(session).count(),
             )
     except Exception:

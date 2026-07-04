@@ -87,6 +87,7 @@ def db_session(migrated_engine: Engine) -> Iterator[Session]:
             for table in (
                 "conversation_understanding_failures",
                 "llm_call_observations",
+                "knowledge_documents",
                 "conversation_issues",
                 "issue_catalog",
                 "anomalies",
