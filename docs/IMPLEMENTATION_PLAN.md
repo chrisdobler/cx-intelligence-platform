@@ -140,6 +140,18 @@ Automated anomaly report for Day 2 and Day 3.
 
 # Phase 5 — Knowledge Base
 
+> **Status: delivered.** Every resolved issue is deterministically distilled
+> from its Structured Conversation Object into a canonical `KnowledgeDocument`
+> (ADR-014 — no second LLM call), rendered to `knowledge_text` by a
+> deterministic template, embedded with `gemini-embedding-001`, and persisted
+> to pgvector (`knowledge_documents`). Retrieval is metadata-first:
+> deterministic filters (resolved-only by construction, `product`) narrow the
+> candidates before cosine vector search, with progressive filter relaxation
+> when nothing matches. Reruns are resumable — unchanged conversations are
+> skipped without any embedding call. Integrated with `app build-kb` /
+> `app search`, `GET /api/knowledge/search`, the control center card, and the
+> orchestrator.
+
 ## Objectives
 
 - Process resolved conversations

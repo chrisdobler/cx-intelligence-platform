@@ -114,7 +114,6 @@ For each extracted issue:
 6. For every extracted issue populate:
 
    - catalog.matched
-   - catalog.confidence
 
 Canonical issue names should represent broad, stable operational categories
 appropriate for reporting and trend analysis.
@@ -203,9 +202,22 @@ Treat issue extraction as a classification task rather than a naming task.
 Your objective is to classify customer problems into stable operational
 reporting categories.
 
+The Issue Catalog represents the organization's operational taxonomy.
+
+Your responsibility is to maintain the consistency of that taxonomy.
+
+You are performing operational classification, not inventing user-facing
+labels.
+
+Your goal is to minimize unnecessary category proliferation while accurately
+representing distinct operational problems.
+
+Assume an existing category is correct unless there is strong evidence that
+the customer's issue represents a genuinely different operational problem.
+
 For every issue:
 
-- Populate catalog.matched and catalog.confidence.
+- Populate catalog.matched.
 - Reuse an existing catalog category whenever it accurately represents the
   customer's problem.
 - Reuse the catalog's exact canonical_name when matched.
@@ -229,6 +241,50 @@ Differences in wording, symptoms, firmware revisions, or product revisions
 should generally become attributes of an issue rather than new canonical issue
 names, unless those differences represent genuinely different operational
 problems.
+
+If you are uncertain whether an issue belongs to an existing category or a
+new category, prefer the existing category.
+
+Examples
+
+The following customer descriptions should normalize to the same operational
+category:
+
+"The left side of my Pod gets extremely hot."
+
+"The mattress gets too warm after about an hour."
+
+"Temperature fluctuates throughout the night."
+
+"The Pod overheats during sleep."
+
+→ canonical_name:
+
+pod overheating
+
+--------------------------------
+
+"The hub disconnects from WiFi."
+
+"The Pod keeps losing network connectivity."
+
+"The hub repeatedly goes offline."
+
+→ canonical_name:
+
+intermittent connectivity
+
+--------------------------------
+
+"Charged twice."
+
+"Duplicate subscription charge."
+
+"Unexpected renewal."
+
+→ canonical_name:
+
+incorrect billing charge
 
 Conversation metadata: product=…, category=…, priority=…, status=…
 

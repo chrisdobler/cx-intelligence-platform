@@ -138,8 +138,7 @@ Suggested schema:
         "..."
       ],
       "catalog": {
-        "matched": true,
-        "confidence": 0.98
+        "matched": true
       },
       "resolution_status": "resolved",
       "resolution_summary": "..."
