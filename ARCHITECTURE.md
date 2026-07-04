@@ -69,7 +69,7 @@ Both required assignment components build upon the same conversation-understandi
 
 A conversation should only be processed once.
 
-The resulting Structured Conversation Object is the central artifact of the platform. Every downstream capability—including analytics, anomaly detection, embeddings, semantic retrieval, and the Resolution Assistant—consumes this normalized representation rather than reprocessing raw conversations.
+The resulting Structured Conversation Object is the central artifact of the platform (see [ADR-008](docs/ARCHITECTURE_DECISIONS.md#adr-008--canonical-ai-artifact)). Every downstream capability—including analytics, anomaly detection, embeddings, semantic retrieval, and the Resolution Assistant—consumes this normalized representation rather than reprocessing raw conversations.
 
 The resulting structured representation becomes the foundation for:
 
@@ -118,7 +118,7 @@ active. The in-flight job snapshot is in-memory UI state; a message queue is
 not justified at this scale (see the complexity budget).
 
 **Pipeline auditing.** Every stage execution is durably recorded in the
-`pipeline_runs` table: which stage ran, when, what triggered it (API or CLI),
+`pipeline_runs` table (see [ADR-013](docs/ARCHITECTURE_DECISIONS.md#adr-013--conversation-isolation)): which stage ran, when, what triggered it (API or CLI),
 how long it took, and how it ended (summary on success, error on failure). A
 `running` row is written before the stage executes, so a crashed process
 leaves evidence rather than vanishing from history. This audit trail feeds the
@@ -134,7 +134,7 @@ metadata) and response-level model versions.
 **Evaluation (Phase 7).** The `evaluate` stage runs the version-controlled
 golden dataset (`evals/golden/`) through the production Understanding,
 Retrieval, and Resolution code paths and compares the resulting canonical
-artifacts deterministically against curated expectations (ADR-015 — no
+artifacts deterministically against curated expectations ([ADR-015](docs/ARCHITECTURE_DECISIONS.md#adr-015--deterministic-evaluation) — no
 LLM-as-a-judge). Each run produces a versionable report
 (`reports/evaluation-report.{json,md}`), persists its headline numbers and
 full report to the `evaluation_runs` table, and detects regressions against
@@ -160,7 +160,7 @@ Responsibilities:
 
 ## 2. Conversation Understanding
 
-The LLM acts as an information extraction engine.
+The LLM acts as an information extraction engine. This stage follows the canonical artifact, typed contract, whole-conversation processing, and baseline taxonomy decisions (see [ADR-008](docs/ARCHITECTURE_DECISIONS.md#adr-008--canonical-ai-artifact), [ADR-009](docs/ARCHITECTURE_DECISIONS.md#adr-009--typed-ai-contracts), [ADR-010](docs/ARCHITECTURE_DECISIONS.md#adr-010--whole-conversation-processing), and [ADR-011](docs/ARCHITECTURE_DECISIONS.md#adr-011--baseline-derived-issue-catalog)).
 
 Each conversation is interpreted whole, exactly once, into the canonical
 Structured Conversation Object (Version 1, frozen — see
@@ -194,7 +194,7 @@ A single datastore keeps deployment simple while satisfying the scale of this pr
 
 ## 4. Anomaly Detection
 
-A **deterministic multi-signal rules engine** (ADR-012) over the relational
+A deterministic multi-signal rules engine (see [ADR-012](docs/ARCHITECTURE_DECISIONS.md#adr-012--multi-signal-anomaly-detection)) over the relational
 projections — the LLM plays no part in detection, and raw conversations are
 never reparsed. Each post-baseline day's per-issue statistics (one grouped
 SQL query) are compared against Day 1 using four independent signals:
@@ -226,7 +226,7 @@ Only resolved issues become retrieval documents.
 
 Conversation Understanding already performs semantic interpretation.
 
-Phase 5 deliberately avoids a second LLM call.
+Phase 5 deliberately avoids a second LLM call. This follows [ADR-014](docs/ARCHITECTURE_DECISIONS.md#adr-014--deterministic-knowledge-synthesis) and uses the embedding rendering strategy from [ADR-016](docs/ARCHITECTURE_DECISIONS.md#adr-016--embedding-document-rendering-strategy).
 
 Instead:
 
@@ -295,7 +295,7 @@ historical evidence.
 
 # Technology Decisions
 
-## PostgreSQL + pgvector
+# PostgreSQL + pgvector ([ADR-001](docs/ARCHITECTURE_DECISIONS.md#adr-001--single-operational-datastore))
 
 Chosen because:
 
@@ -306,7 +306,7 @@ Chosen because:
 
 If retrieval requirements grow significantly, the vector layer could later be separated without changing the overall architecture.
 
-# AI Provider Strategy
+# AI Provider Strategy ([ADR-002](docs/ARCHITECTURE_DECISIONS.md#adr-002--single-ai-provider))
 
 The platform intentionally uses a single AI provider for both language generation and embeddings.
 

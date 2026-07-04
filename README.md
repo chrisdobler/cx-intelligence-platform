@@ -1,25 +1,41 @@
 # Conversation Intelligence Platform
 
-A production-oriented pipeline for understanding customer-support conversations,
-detecting emerging operational issues, and assisting agents through
-retrieval-augmented generation (RAG).
+This project implements a production-oriented Conversation Intelligence Platform that performs semantic conversation understanding exactly once, projects the results into structured artifacts, detects operational anomalies, builds a semantic knowledge base, and provides a grounded Retrieval-Augmented Generation (RAG) Resolution Assistant.
 
-- **Design:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
-- **Plan / status:** [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
+The project emphasizes engineering architecture, deterministic processing, observability, and evaluation rather than prompt engineering alone.
+
+The final assignment submission is documented in [`WRITEUP.md`](WRITEUP.md).
+
+## Quick Start
+
+```bash
+make install
+make start
+```
+
+Open:
+
+- http://localhost:8000
+
+The repository includes a pre-generated snapshot of AI-derived artifacts so reviewers can immediately explore the completed platform. The full pipeline remains available and can be regenerated locally at any time.
+
+`make start` brings up PostgreSQL + pgvector (waiting until healthy) and the
+Adminer database UI, then serves the API in the foreground and prints the URLs.
+Everything is discoverable from the landing page.
+
+## Repository Guide
+
+- [README.md](README.md) — getting started
+- [WRITEUP.md](WRITEUP.md) — final assignment write-up
+- [ARCHITECTURE.md](ARCHITECTURE.md) — complete architecture
+- [docs/ARCHITECTURE_DECISIONS.md](docs/ARCHITECTURE_DECISIONS.md) — architectural decision records
+- [docs/PROMPT_LIBRARY.md](docs/PROMPT_LIBRARY.md) — production prompts
+- [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) — implementation roadmap
 
 > **Status: Phase 7 (Evaluation & Observability) complete.**
-> The dataset ingests idempotently, Gemini extracts the canonical Structured
-> Conversation Object per conversation (issue catalog derived from the Day-1
-> baseline), a deterministic multi-signal rules engine detects anomalies
-> (volume spikes, novel issues, severity drift, resolution drift) with Slack
-> alerts and a report, and every resolved issue is deterministically distilled
-> into a KnowledgeDocument, embedded with pgvector, and retrievable via
-> metadata-first semantic search — no second LLM call (ADR-014).
-> The Resolution Assistant recommends resolutions grounded exclusively in
-> retrieved historical KnowledgeDocuments, with citations validated in code —
-> when no sufficiently similar resolutions exist it says so instead of
-> inventing steps. Every pipeline stage is an independent job runnable from
-> the landing page, the CLI, or the REST API. See the plan for the roadmap.
+> Every pipeline stage is independently runnable from the Control Center, CLI,
+> or REST API. See [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
+> for the full roadmap and status.
 
 ## Prerequisites
 
@@ -27,49 +43,12 @@ retrieval-augmented generation (RAG).
 - Docker + Docker Compose (for PostgreSQL + pgvector)
 - `make`
 
-## Quick Start
+## Demo Workflows
 
-The repository includes a **pre-generated AI dataset** so reviewers can
-immediately explore the completed platform without first running the
-expensive Conversation Understanding pipeline.
+Reviewers have two supported workflows:
 
-This allows the following capabilities to be demonstrated immediately:
-
-- Anomaly Detection
-- Knowledge Base
-- Semantic Retrieval
-- Resolution Assistant
-
-The complete AI pipeline remains fully implemented and can be executed at any
-time from the Control Center.
-
-The pre-generated dataset is simply a cached snapshot of the AI-generated
-artifacts (`ConversationAnalysis`, `ConversationIssue`, `IssueCatalog`,
-KnowledgeDocuments`, and related derived data). It exists solely to improve
-the first-run experience by avoiding several hours of processing time and
-significant API cost.
-
-Reviewers therefore have two supported workflows:
-
-1. **Load the pre-generated AI dataset** and immediately explore the platform.
+1. **Explore the pre-generated AI dataset** and immediately inspect the completed platform.
 2. **Run the full pipeline from source data** to regenerate every AI artifact.
-
-Both workflows produce the same downstream architecture; the pre-generated
-dataset is a cache of expensive offline AI work, not a different code path.
-
-```bash
-make install       # create the venv and install dependencies (uv sync)
-make start         # start the database + Adminer, then serve the app
-# → open http://localhost:8000
-make stop          # stop the containers (Ctrl-C stops the API first)
-```
-
-
-`make start` brings up PostgreSQL + pgvector (waiting until healthy) and the
-Adminer database UI, then serves the API in the foreground and prints the URLs.
-Everything is discoverable from the landing page — no further docs required.
-
-### Demo workflows
 
 The canonical workflow generates every artifact locally:
 
@@ -82,7 +61,7 @@ make start
 ```
 
 For demonstrations and evaluation, reviewers can instead restore a supplied
-snapshot of the expensive AI-generated artifacts:
+snapshot:
 
 ```bash
 make start
@@ -91,12 +70,7 @@ make start
 # 2. Click "Import Pre-generated AI Dataset"
 ```
 
-The imported dataset is a cache of artifacts produced by Conversation
-Understanding and later derived stages. It is not a new source of truth and it
-does not overwrite raw imported conversations or messages. It lets reviewers
-inspect anomaly detection, the knowledge base, persisted semantic-retrieval
-documents, and other completed downstream outputs without waiting for the full
-offline AI pipeline or spending Conversation Understanding API credits.
+The import does not overwrite raw imported conversations or messages.
 
 By default the Control Center imports
 `data/processed/data-artifacts.tgz`; override this with
@@ -131,6 +105,18 @@ Optional: copy `.env.example` to `.env` to override any setting.
 The landing page at [http://localhost:8000](http://localhost:8000) is the
 operational control center for the platform — the pipeline is run from here,
 not just observed:
+
+Pipeline Control Center:
+
+<img src="docs/images/pipeline-control-center.png" alt="Pipeline Control Center" width="640">
+
+Anomaly Dashboard:
+
+<img src="docs/images/anomaly-analysis-dashboard.png" alt="Anomaly Dashboard" width="640">
+
+Resolution Assistant:
+
+<img src="docs/images/resolution-assistant.png" alt="Resolution Assistant" width="640">
 
 - **Service Status** — green/yellow/red health for PostgreSQL, pgvector, and the API.
 - **Pipeline stage cards** — one card per stage (Data Ingestion, Conversation
@@ -183,10 +169,7 @@ not just observed:
 - **Quick Actions / Links** — jump to the API docs, the database UI, and the
   in-page Anomaly Analysis panel.
 
-The CLI, the REST API, and the landing page all drive the same orchestration
-layer — `app ingest` and the Ingestion card's Run button execute the same code.
-
-Endpoints:
+The REST API exposes the same orchestration layer used by the CLI and Control Center.
 
 | Path | Purpose |
 |---|---|
@@ -216,6 +199,12 @@ Endpoints:
 `make up`/`down` (containers only), `make serve` (API only), `make db-health`.
 Run `make data-artifacts` to refresh the local derived-data bundle at
 `data/processed/data-artifacts.tgz`.
+
+## Architecture at a Glance
+
+[![High-level architecture of the Conversation Intelligence Platform.](docs/diagrams/figure-1-overall-architecture.svg)](docs/diagrams/figure-1-overall-architecture.svg)
+
+For the full design, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Project layout
 
@@ -366,3 +355,13 @@ Import it with:
 ```bash
 app import-derived data/processed/data-artifacts.tgz
 ```
+
+## Design Philosophy
+
+This project intentionally favors:
+
+- deterministic processing over opaque AI workflows
+- strongly typed AI artifacts
+- simple operational architecture
+- reproducible evaluation
+- clear separation between semantic reasoning and conventional software engineering
