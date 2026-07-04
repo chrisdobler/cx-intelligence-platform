@@ -10,11 +10,29 @@ changes. Field names map to upper-case environment variables (for example
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_LLM_MODEL = "gemini-2.5-flash"
+
+
+@dataclass(frozen=True)
+class LLMModelOption:
+    """A reviewer-selectable Conversation Understanding model."""
+
+    label: str
+    value: str
+
+
+LLM_MODEL_OPTIONS: tuple[LLMModelOption, ...] = (
+    LLMModelOption(label="Gemini Flash", value=DEFAULT_LLM_MODEL),
+    LLMModelOption(label="Gemini Flash-Lite", value="gemini-2.5-flash-lite"),
+)
+SUPPORTED_LLM_MODEL_VALUES = frozenset(option.value for option in LLM_MODEL_OPTIONS)
 
 
 class Settings(BaseSettings):
@@ -36,7 +54,7 @@ class Settings(BaseSettings):
     # --- LLM (Google AI Studio) — used from Phase 3 ----------------------
     llm_provider: str = Field(default="google", description="LLM provider (pluggable).")
     google_api_key: str | None = Field(default=None)
-    llm_model: str = Field(default="gemini-2.5-flash")
+    llm_model: str = Field(default=DEFAULT_LLM_MODEL)
 
     # --- Embeddings — used from Phase 5 ----------------------------------
     embedding_provider: str = Field(

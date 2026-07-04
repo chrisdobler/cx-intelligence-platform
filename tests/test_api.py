@@ -17,6 +17,7 @@ def _unconfigured_ai(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterato
     """Isolate from the developer's real .env — these tests assume no API key."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -56,6 +57,11 @@ def test_status_endpoint_shape() -> None:
     # No key configured in the test environment.
     assert payload["ai"]["configured"] is False
     assert payload["ai"]["provider"] == "google"
+    assert payload["ai"]["model"] == "gemini-2.5-flash"
+    assert payload["ai"]["model_options"] == [
+        {"label": "Gemini Flash", "value": "gemini-2.5-flash"},
+        {"label": "Gemini Flash-Lite", "value": "gemini-2.5-flash-lite"},
+    ]
 
 
 def test_config_endpoint_hides_secrets() -> None:
@@ -67,6 +73,11 @@ def test_config_endpoint_hides_secrets() -> None:
     assert "google_api_key" not in payload
     assert "slack_webhook_url" not in payload
     assert payload["google_api_key_set"] is False
+    assert payload["llm_model"] == "gemini-2.5-flash"
+    assert payload["llm_model_options"] == [
+        {"label": "Gemini Flash", "value": "gemini-2.5-flash"},
+        {"label": "Gemini Flash-Lite", "value": "gemini-2.5-flash-lite"},
+    ]
     # The DB password is masked in the displayed URL.
     assert "***" in payload["database_url"]
     assert ":cx@" not in payload["database_url"]

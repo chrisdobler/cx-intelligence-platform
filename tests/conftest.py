@@ -61,6 +61,7 @@ def settings_on_test_db(migrated_engine: Engine, monkeypatch: pytest.MonkeyPatch
     from cxintel.db import get_engine, get_session_factory
 
     monkeypatch.setenv("DATABASE_URL", _TEST_URL)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
     get_settings.cache_clear()
     get_engine.cache_clear()
     get_session_factory.cache_clear()

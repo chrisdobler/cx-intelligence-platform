@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from .. import __version__
-from ..config import get_settings, set_env_key
+from ..config import LLM_MODEL_OPTIONS, SUPPORTED_LLM_MODEL_VALUES, get_settings, set_env_key
 from ..db import check_health
 from ..knowledge_base.retrieval import RetrievedKnowledge
 from ..pipeline import orchestrator
@@ -97,6 +97,9 @@ def api_config() -> dict[str, object]:
         "database_url": _mask_database_url(s.database_url),
         "llm_provider": s.llm_provider,
         "llm_model": s.llm_model,
+        "llm_model_options": [
+            {"label": option.label, "value": option.value} for option in LLM_MODEL_OPTIONS
+        ],
         "google_api_key_set": s.google_api_key is not None,
         "embedding_provider": s.embedding_provider,
         "embedding_model": s.embedding_model,
@@ -440,3 +443,28 @@ def set_google_key(body: GoogleKeyRequest) -> dict[str, object]:
     os.environ["GOOGLE_API_KEY"] = key
     get_settings.cache_clear()
     return {"saved": True, "ai_configured": get_settings().ai_configured}
+
+
+class LLMModelRequest(BaseModel):
+    """Body for the local model selector endpoint."""
+
+    model: str
+
+
+@app.post("/api/config/llm-model")
+def set_llm_model(body: LLMModelRequest) -> dict[str, object]:
+    """Save the reviewer-selected Conversation Understanding model locally."""
+    model = body.model.strip()
+    if model not in SUPPORTED_LLM_MODEL_VALUES:
+        allowed = ", ".join(sorted(SUPPORTED_LLM_MODEL_VALUES))
+        raise HTTPException(status_code=422, detail=f"Unsupported LLM model. Choose: {allowed}.")
+    set_env_key("LLM_MODEL", model)
+    os.environ["LLM_MODEL"] = model
+    get_settings.cache_clear()
+    return {
+        "saved": True,
+        "llm_model": get_settings().llm_model,
+        "llm_model_options": [
+            {"label": option.label, "value": option.value} for option in LLM_MODEL_OPTIONS
+        ],
+    }

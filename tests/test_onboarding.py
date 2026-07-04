@@ -25,6 +25,7 @@ def _isolated_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Itera
     """
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -106,5 +107,46 @@ def test_save_key_strips_surrounding_whitespace(tmp_path: Path) -> None:
 def test_save_key_rejects_invalid_keys(bad_key: str) -> None:
     client = TestClient(app)
     response = client.post("/api/config/google-key", json={"api_key": bad_key})
+    assert response.status_code == 422
+    assert not Path(".env").exists()
+
+
+# --- POST /api/config/llm-model -------------------------------------------
+
+
+def test_save_llm_model_writes_env_and_updates_live_settings(tmp_path: Path) -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/llm-model", json={"model": "gemini-2.5-flash-lite"}
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["saved"] is True
+    assert payload["llm_model"] == "gemini-2.5-flash-lite"
+    assert "gemini-2.5-flash-lite" not in payload.get("detail", "")
+
+    assert "LLM_MODEL=gemini-2.5-flash-lite\n" in Path(".env").read_text(
+        encoding="utf-8"
+    )
+    assert client.get("/api/status").json()["ai"]["model"] == "gemini-2.5-flash-lite"
+    assert client.get("/api/config").json()["llm_model"] == "gemini-2.5-flash-lite"
+
+
+def test_save_llm_model_strips_surrounding_whitespace(tmp_path: Path) -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/api/config/llm-model", json={"model": "  gemini-2.5-flash-lite  "}
+    )
+    assert response.status_code == 200
+    assert "LLM_MODEL=gemini-2.5-flash-lite\n" in Path(".env").read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.parametrize("bad_model", ["", "gemini-3.1-flash-lite", "gemini-pro"])
+def test_save_llm_model_rejects_unsupported_models(bad_model: str) -> None:
+    client = TestClient(app)
+    response = client.post("/api/config/llm-model", json={"model": bad_model})
     assert response.status_code == 422
     assert not Path(".env").exists()

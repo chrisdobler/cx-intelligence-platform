@@ -11,6 +11,7 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
+from cxintel.config import get_settings
 from cxintel.llm import (
     LLMFailureCategory,
     PermanentLLMExtractionError,
@@ -355,6 +356,40 @@ def test_rerun_skips_already_analyzed(factory: Any, db_session: Session) -> None
     assert rerun.analyzed == 0
     assert rerun.skipped_existing == 1
     assert len(provider.prompts) == 1  # provider not called again
+
+
+def test_selected_model_applies_only_to_new_analyses(
+    factory: Any, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first_id = seed_conversation(db_session, "conv_a", 1, "marker-alpha")
+    provider = FakeProvider({"marker-alpha": analysis_for(["leak"])})
+    assert make_service(factory, provider).run(limit=None).analyzed == 1
+
+    second_id = seed_conversation(db_session, "conv_b", 1, "marker-beta")
+    monkeypatch.setenv("LLM_MODEL", "gemini-2.5-flash-lite")
+    get_settings.cache_clear()
+    try:
+        continuation = FakeProvider(
+            {
+                "marker-alpha": AssertionError("already analyzed conversation was reprocessed"),
+                "marker-beta": analysis_for(["sensor drift"]),
+            }
+        )
+        result = make_service(factory, continuation).run(limit=None)
+    finally:
+        get_settings.cache_clear()
+
+    assert result.analyzed == 1
+    assert result.skipped_existing == 1
+    assert len(continuation.prompts) == 1
+    first = ConversationAnalysisRepository(db_session).get(first_id)
+    second = ConversationAnalysisRepository(db_session).get(second_id)
+    assert first is not None
+    assert second is not None
+    assert first.model == "gemini-2.5-flash"
+    assert first.model_version == "gemini-2.5-flash"
+    assert second.model == "gemini-2.5-flash-lite"
+    assert second.model_version == "gemini-2.5-flash-lite"
 
 
 def test_normal_rerun_skips_recorded_terminal_failures(

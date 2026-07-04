@@ -81,6 +81,27 @@
     .key-msg { font-size: 13px; margin: 8px 0 0; }
     .key-msg.ok { color: var(--green); }
     .key-msg.err { color: var(--red); }
+    .model-control {
+      display: flex; align-items: center; justify-content: space-between; gap: 14px;
+      margin-bottom: 18px;
+    }
+    .model-control .model-title { font-weight: 700; }
+    .model-control .model-current { color: var(--muted); font-size: 12.5px; }
+    .model-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .model-form label { color: var(--muted); font-size: 13px; font-weight: 600; }
+    .model-form select {
+      font: inherit; padding: 8px 34px 8px 10px; border: 1px solid var(--border);
+      border-radius: 8px; background: var(--card); min-width: 190px;
+    }
+    .model-form select:focus { outline: none; border-color: var(--accent); }
+    .model-msg { color: var(--muted); font-size: 12.5px; min-width: 54px; }
+    .model-msg.ok { color: var(--green); }
+    .model-msg.err { color: var(--red); }
+    @media (max-width: 720px) {
+      .model-control { align-items: flex-start; flex-direction: column; }
+      .model-form { width: 100%; }
+      .model-form select { flex: 1; min-width: 0; }
+    }
 
     /* Pipeline control center */
     .pipeline-head .head-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
@@ -285,6 +306,19 @@
       <p>Understand support conversations, detect emerging issues, and assist agents with retrieval-augmented answers.</p>
     </header>
 
+    <div class="card model-control" id="model-control">
+      <div>
+        <span class="model-title">Conversation Understanding</span><br>
+        <span class="model-current">Loading model…</span>
+      </div>
+      <form class="model-form" id="model-form">
+        <label for="model-select">Model</label>
+        <select id="model-select" disabled aria-label="Conversation Understanding model"></select>
+        <button class="btn" type="submit" id="model-save" disabled>Save</button>
+        <span class="model-msg" id="model-msg"></span>
+      </form>
+    </div>
+
     <section>
       <h2>Service Status</h2>
       <div class="card">
@@ -465,6 +499,21 @@
       }
     }
 
+    function renderModelSelector(ai, job) {
+      const el = document.getElementById("model-control");
+      const select = document.getElementById("model-select");
+      const save = document.getElementById("model-save");
+      const current = el.querySelector(".model-current");
+      const busy = job && job.state === "running";
+      const options = ai.model_options || [];
+      select.innerHTML = options.map((opt) =>
+        `<option value="${esc(opt.value)}" ${opt.value === ai.model ? "selected" : ""}>${esc(opt.label)}</option>`
+      ).join("");
+      select.disabled = busy || options.length === 0;
+      save.disabled = busy || options.length === 0;
+      current.textContent = `${ai.provider} · ${ai.model}`;
+    }
+
     async function saveKey(event) {
       event.preventDefault();
       const input = document.getElementById("ai-key");
@@ -494,6 +543,41 @@
       }
       button.disabled = false;
     }
+
+    async function saveModel(event) {
+      event.preventDefault();
+      const select = document.getElementById("model-select");
+      const button = document.getElementById("model-save");
+      const msg = document.getElementById("model-msg");
+      button.disabled = true;
+      select.disabled = true;
+      msg.className = "model-msg";
+      msg.textContent = "Saving…";
+      try {
+        const res = await fetch("/api/config/llm-model", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: select.value }),
+        });
+        const data = await res.json();
+        if (res.ok && data.saved) {
+          await load();
+          const refreshed = document.getElementById("model-msg");
+          refreshed.className = "model-msg ok";
+          refreshed.textContent = "Saved.";
+          return;
+        }
+        msg.className = "model-msg err";
+        msg.textContent = typeof data.detail === "string"
+          ? data.detail : "Could not save model.";
+      } catch (e) {
+        msg.className = "model-msg err";
+        msg.textContent = "Could not reach the API.";
+      }
+      button.disabled = false;
+      select.disabled = false;
+    }
+    document.getElementById("model-form").addEventListener("submit", saveModel);
 
     const ACTION_LABELS = { run: "Run", run_again: "Run Again", open: "Open" };
 
@@ -1053,6 +1137,7 @@ Imported conversations and messages will NOT be modified.`;
         const res = await fetch("/api/status");
         const data = await res.json();
         renderServices(data.services, true);
+        renderModelSelector(data.ai, data.job);
         renderAI(data.ai);
         renderStageCards(data.pipeline, data.job);
         renderJob(data.job, data.pipeline);

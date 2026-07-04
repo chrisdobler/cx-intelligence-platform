@@ -17,7 +17,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-from ..config import get_settings
+from ..config import LLM_MODEL_OPTIONS, get_settings
 from ..db import check_health
 from ..pipeline.jobs import TRACKER, Job
 from ..pipeline.orchestrator import LastRun, StageStatus, stage_statuses
@@ -80,12 +80,20 @@ class Metrics(BaseModel):
     anomaly_count: int | None = None  # Phase 4
 
 
+class LLMModelOption(BaseModel):
+    """A selectable LLM model shown in the Control Center."""
+
+    label: str
+    value: str
+
+
 class AIStatus(BaseModel):
     """Whether AI generation is configured, plus how to enable it if not."""
 
     configured: bool
     provider: str
     model: str
+    model_options: list[LLMModelOption]
     setup_url: str
 
 
@@ -198,6 +206,10 @@ def build_status() -> PlatformStatus:
         configured=settings.ai_configured,
         provider=settings.llm_provider,
         model=settings.llm_model,
+        model_options=[
+            LLMModelOption(label=option.label, value=option.value)
+            for option in LLM_MODEL_OPTIONS
+        ],
         setup_url=AI_SETUP_URL,
     )
 
