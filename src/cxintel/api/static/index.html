@@ -195,6 +195,19 @@
     .sev.low { background: #eef1f5; color: var(--muted); }
     .signal-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .chip { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #eef1f5; color: var(--accent); }
+    .eval-stats { display: flex; align-items: baseline; gap: 22px; flex-wrap: wrap; margin: 10px 0 4px; }
+    .eval-stats .m .k { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .eval-stats .m .v { font-size: 22px; font-weight: 750; }
+    .eval-stats .m .v.ok { color: var(--green); }
+    .eval-stats .m .v.warn { color: var(--yellow); }
+    .eval-stats .m .v.bad { color: var(--red); }
+    .eval-suites { display: grid; gap: 6px; margin: 8px 0; max-width: 560px; }
+    .eval-suite { display: grid; grid-template-columns: 130px 1fr 88px; align-items: center; gap: 10px; font-size: 13px; }
+    .eval-suite .bar { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+    .eval-suite .bar span { display: block; height: 100%; background: var(--green); }
+    .eval-suite.partial .bar span { background: var(--yellow); }
+    .eval-regressions { margin: 6px 0 0 0; padding-left: 18px; color: var(--red); font-size: 13px; }
+    .eval-meta { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
     .anomaly-metrics { display: flex; align-items: baseline; gap: 18px; }
     .anomaly-metrics .m .k { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
     .anomaly-metrics .m .v { font-size: 20px; font-weight: 750; }
@@ -245,7 +258,12 @@
     }
     .res-badge.grounded { background: #d1fadf; color: #027a48; }
     .res-badge.ungrounded { background: #fef0c7; color: #b54708; }
-    .res-recommendation { font-weight: 700; font-size: 16px; margin: 10px 0 4px; }
+    .res-pipeline { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 10px 0 8px; color: var(--muted); font-size: 12.5px; }
+    .res-pipeline span { display: inline-flex; align-items: center; gap: 4px; }
+    .res-recommendation-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 0 0 4px; }
+    .res-recommendation { font-weight: 700; font-size: 16px; margin: 0; }
+    .res-citations { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+    .res-citation { font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: #d1fadf; color: #027a48; }
     .res-reasoning { margin: 0 0 10px; color: var(--muted); font-size: 13.5px; }
     .res-actions-list { margin: 0 0 12px; padding-left: 22px; font-size: 13.5px; }
     .res-actions-list li { margin: 3px 0; }
@@ -259,7 +277,9 @@
     .res-doc .doc-id { font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     .res-doc .doc-issue { font-weight: 600; }
     .res-doc .doc-meta { color: var(--muted); font-size: 12px; margin-left: auto; }
-    .res-doc .doc-resolution { margin: 4px 0 0; color: var(--muted); }
+    .res-doc .doc-resolution { margin: 6px 0 0; color: var(--muted); }
+    .res-doc .doc-fields { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .res-doc .doc-fields .k { color: var(--text); font-weight: 650; }
     .res-retrieval { margin-top: 10px; color: var(--muted); font-size: 12.5px; }
 
     /* Recent runs (audit trail) */
@@ -641,12 +661,15 @@
           const importDisabled = busy || !datasetImported(stages);
           button += `<button class="btn" data-import-derived="1" ${importDisabled ? "disabled" : ""}>Import Pre-generated AI Dataset</button>`;
         }
-        // The anomaly card always carries its full-width analysis inline.
+        // The anomaly and evaluation cards carry their full-width panels inline.
         const isAnomaly = st.key === "anomaly";
+        const isEvaluation = st.key === "evaluate";
         const inlinePanel = isAnomaly
           ? `<div class="anomaly-inline" id="anomaly-panel" aria-live="polite"></div>`
+          : isEvaluation
+          ? `<div class="anomaly-inline" id="evaluation-panel" aria-live="polite"></div>`
           : "";
-        const expanded = isAnomaly ? "expanded" : "";
+        const expanded = isAnomaly || isEvaluation ? "expanded" : "";
         return `<div class="card stage-card ${expanded} ${activeStage === st.key ? "active" : ""}">
           <div class="stage-head">
             ${badge(st, i)}
@@ -669,6 +692,7 @@
         btn.addEventListener("click", importDerived);
       }
       injectAnomalyPanel();
+      injectEvaluationPanel();
     }
 
     function renderProgress(job) {
@@ -1196,6 +1220,106 @@ Imported conversations and messages will NOT be modified.`;
       if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
     });
 
+    /* --- Evaluation panel (Phase 7) --- */
+    let evaluationPanelHTML = ""; // cached markup, re-injected after every re-render
+    let evalReportOpen = false;
+
+    function injectEvaluationPanel() {
+      const el = document.getElementById("evaluation-panel");
+      if (!el) return;
+      el.innerHTML = evaluationPanelHTML
+        || `<div class="panel-title">AI Quality</div><p class="anomaly-empty">Loading…</p>`;
+      const details = el.querySelector("details.raw-report");
+      if (details) {
+        details.open = evalReportOpen;
+        details.addEventListener("toggle", () => { evalReportOpen = details.open; });
+      }
+    }
+
+    function renderEvaluationPanel(status, report) {
+      const pct = (v) => `${(v * 100).toFixed(1)}%`;
+      const rateClass = (v) => (v >= 0.9 ? "ok" : v >= 0.7 ? "warn" : "bad");
+      const suites = (status.suites || []).map((s) => `
+        <div class="eval-suite ${s.passed === s.total ? "" : "partial"}">
+          <span>${esc(s.suite)}</span>
+          <div class="bar"><span style="width:${Math.round(s.pass_rate * 100)}%"></span></div>
+          <span>${s.passed}/${s.total} (${pct(s.pass_rate)})</span>
+        </div>`).join("");
+      const regressionValue = status.baseline_available
+        ? `<span class="v ${status.regression_count ? "bad" : "ok"}">${status.regression_count}</span>`
+        : `<span class="v">—</span>`;
+      const regressions = status.baseline_available && status.regressions.length
+        ? `<h3>Regressions vs baseline</h3>
+           <ul class="eval-regressions">${status.regressions.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>`
+        : "";
+      const baselineNote = status.baseline_available
+        ? ""
+        : `<p class="eval-meta">No baseline promoted yet — run <code>app evaluate --promote-baseline</code> after a reviewed run to enable regression detection.</p>`;
+      const rm = status.retrieval_metrics, gm = status.grounding_metrics;
+      const metricsLine = [
+        rm ? `retrieval: recall@k ${rm.recall_at_k.toFixed(2)}, MRR ${rm.mrr.toFixed(2)}` : null,
+        gm ? `grounding: citations ${pct(gm.citation_validity_rate)}, accuracy ${pct(gm.grounded_accuracy)}` : null,
+        status.total_tokens != null ? `${status.total_tokens.toLocaleString()} tokens` : null,
+      ].filter(Boolean).join(" · ");
+      evaluationPanelHTML = `
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">AI Quality — Golden Dataset Evaluation</div>
+            <div class="panel-sub">Last evaluation ${new Date(status.finished_at).toLocaleString()}
+              · dataset v${esc(status.dataset_version)} · deterministic artifact comparison (no LLM judges)</div>
+          </div>
+        </div>
+        <div class="eval-stats">
+          <div class="m"><div class="k">Pass rate</div>
+            <span class="v ${rateClass(status.pass_rate)}">${pct(status.pass_rate)}</span></div>
+          <div class="m"><div class="k">Cases</div>
+            <span class="v">${status.passed_cases}/${status.total_cases}</span></div>
+          <div class="m"><div class="k">Regressions</div>${regressionValue}</div>
+          <div class="m"><div class="k">Model</div><span class="v" style="font-size:15px">${esc(status.model)}</span></div>
+          <div class="m"><div class="k">Prompts</div>
+            <span class="v" style="font-size:15px">und ${esc(status.understanding_prompt_version)} · res ${esc(status.resolution_prompt_version)}</span></div>
+        </div>
+        <div class="eval-suites">${suites}</div>
+        ${regressions}
+        ${baselineNote}
+        ${metricsLine ? `<p class="eval-meta">${esc(metricsLine)}</p>` : ""}
+        <h3>Raw Report
+          <a class="raw-link" href="/api/evaluation/report" target="_blank" rel="noopener">open raw ↗</a>
+        </h3>
+        <details class="raw-report">
+          <summary>Show the evaluation report</summary>
+          <pre>${esc(report)}</pre>
+        </details>`;
+      injectEvaluationPanel();
+    }
+
+    async function loadEvaluationPanel() {
+      let status, report;
+      try {
+        const [sRes, rRes] = await Promise.all([
+          fetch("/api/evaluation/latest"),
+          fetch("/api/evaluation/report"),
+        ]);
+        status = await sRes.json();
+        report = await rRes.text();
+      } catch (e) {
+        evaluationPanelHTML = `<div class="panel-title">AI Quality</div>
+          <p class="anomaly-empty">Could not load evaluation data — is the API reachable?</p>`;
+        injectEvaluationPanel();
+        return;
+      }
+      if (!status.available) {
+        evaluationPanelHTML = `
+          <div class="panel-title">AI Quality — Golden Dataset Evaluation</div>
+          <p class="anomaly-empty">No evaluation has run yet. Run the Evaluation stage (or
+          <code>app evaluate</code>) to measure Conversation Understanding, Retrieval, and the
+          Resolution Assistant against the version-controlled golden dataset.</p>`;
+        injectEvaluationPanel();
+        return;
+      }
+      renderEvaluationPanel(status, report);
+    }
+
     /* --- Resolution Assistant --- */
     let resMode = "ticket";
 
@@ -1320,9 +1444,18 @@ Imported conversations and messages will NOT be modified.`;
       const el = document.getElementById("res-result");
       const r = result.response;
       const cited = new Set(r.citations);
+      const meta = result.bundle.retrieval;
       const badge = r.grounded
         ? `<span class="res-badge grounded">Grounded — ${esc(r.evidence_strength)} evidence</span>`
         : `<span class="res-badge ungrounded">Ungrounded — no sufficient evidence</span>`;
+      const pipeline = [
+        "Conversation structured",
+        `Retrieved ${meta.result_count} KnowledgeDocument${meta.result_count === 1 ? "" : "s"}`,
+        result.llm_called ? "Recommendation generated" : "No-evidence response generated",
+      ].map((step) => `<span>✓ ${esc(step)}</span>`).join("");
+      const recommendationCitations = r.citations.length
+        ? `<span class="res-citations">${r.citations.map((c) => `<span class="res-citation">${esc(c)}</span>`).join("")}</span>`
+        : "";
       const issuePicker = result.issues.length > 1 ? `
         <p class="res-msg muted" style="margin:10px 0 4px;">This conversation has ${result.issues.length} issues — pick one to resolve:</p>
         <ul class="res-issues" id="res-result-issues">${result.issues.map((o) => `<li>
@@ -1333,25 +1466,39 @@ Imported conversations and messages will NOT be modified.`;
       const actions = r.recommended_actions.length
         ? `<ol class="res-actions-list">${r.recommended_actions.map((a) => `<li>${esc(a)}</li>`).join("")}</ol>`
         : "";
-      const docs = result.bundle.documents.map((d) => `
+      const docs = result.bundle.documents.map((d) => {
+        const doc = d.document;
+        const resolutionType = doc.resolution_type
+          ? `<span><span class="k">Type:</span> ${esc(doc.resolution_type)}</span>`
+          : "";
+        return `
         <div class="res-doc ${cited.has(d.doc_id) ? "cited" : ""}">
           <div class="doc-head">
             <span class="doc-id">${esc(d.doc_id)}</span>
-            <span class="doc-issue">${esc(d.document.issue)}</span>
+            <span class="doc-issue">${esc(doc.issue)}</span>
             ${cited.has(d.doc_id) ? `<span class="chip">cited</span>` : ""}
-            <span class="doc-meta">${esc(d.document.product)} · distance ${d.distance.toFixed(3)}</span>
+            <span class="doc-meta">distance ${d.distance.toFixed(3)}</span>
           </div>
-          <p class="doc-resolution">${esc(d.document.resolution_summary)}</p>
-        </div>`).join("");
-      const meta = result.bundle.retrieval;
+          <p class="doc-resolution"><strong>Resolution:</strong> ${esc(doc.resolution_summary)}</p>
+          <div class="doc-fields">
+            <span><span class="k">Product:</span> ${esc(doc.product || "unknown")}</span>
+            ${resolutionType}
+            <span><span class="k">Similarity:</span> ${d.distance.toFixed(3)}</span>
+          </div>
+        </div>`;
+      }).join("");
       el.style.display = "";
       el.innerHTML = `
         ${badge}
         ${issuePicker}
-        <p class="res-recommendation">${esc(r.recommendation)}</p>
+        <div class="res-pipeline">${pipeline}</div>
+        <div class="res-recommendation-row">
+          <p class="res-recommendation">${esc(r.recommendation)}</p>
+          ${recommendationCitations}
+        </div>
         <p class="res-reasoning">${esc(r.reasoning)}</p>
         ${actions}
-        ${result.bundle.documents.length ? `<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:14px 0 8px;font-weight:600;">Retrieved evidence</h3>
+        ${result.bundle.documents.length ? `<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:14px 0 8px;font-weight:600;">Retrieved Knowledge Documents</h3>
         <div class="res-evidence">${docs}</div>` : ""}
         <p class="res-retrieval">Retrieved ${meta.result_count} of up to ${meta.limit} documents${meta.product_filter ? ` · product filter: ${esc(meta.product_filter)}${meta.filter_relaxed ? " (relaxed — no exact match)" : ""}` : ""}${result.llm_called ? "" : " · answered deterministically without an LLM call"}</p>`;
       const picker = el.querySelector("#res-result-issues");
@@ -1377,7 +1524,7 @@ Imported conversations and messages will NOT be modified.`;
         renderMetrics(data.metrics);
         await loadRuns();
         const running = Boolean(data.job && data.job.state === "running");
-        if (jobWasRunning && !running) loadAnomalyPanel();
+        if (jobWasRunning && !running) { loadAnomalyPanel(); loadEvaluationPanel(); }
         jobWasRunning = running;
         if (running) startPolling();
         else stopPolling();
@@ -1390,6 +1537,7 @@ Imported conversations and messages will NOT be modified.`;
     }
     load();
     loadAnomalyPanel();
+    loadEvaluationPanel();
   </script>
 </body>
 </html>

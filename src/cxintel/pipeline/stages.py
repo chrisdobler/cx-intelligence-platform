@@ -69,6 +69,10 @@ class PipelineStage(ABC):
     planned_phase: str | None = None
     open_url: str | None = None
     run_options: tuple[RunOption, ...] = ()
+    # Whether "Run Remaining Pipeline" may auto-run this stage. Stages that
+    # cost live LLM calls without producing pipeline data (evaluation) opt out
+    # and run only explicitly.
+    include_in_run_remaining: bool = True
 
     @abstractmethod
     def is_complete(self, session: Session | None) -> bool:
@@ -404,6 +408,88 @@ class AnomalyStage(PipelineStage):
         provider = get_llm_provider(max_transient_attempts=2, max_retry_sleep=8.0)
         service = AnomalyService(session_factory, provider, pipeline_run_id=run_id)
         return service.run(progress=reporter).summary()
+
+
+def _evaluation_run_count(session: Session) -> int:
+    from ..repositories import EvaluationRunRepository
+
+    return EvaluationRunRepository(session).count()
+
+
+class EvaluateStage(PipelineStage):
+    """Phase 7 — deterministic golden-dataset evaluation of the AI stages."""
+
+    key = "evaluate"
+    label = "Evaluation"
+    description = (
+        "Run the version-controlled golden dataset through the production AI "
+        "code paths and compare the structured artifacts deterministically — "
+        "no LLM judges. Produces the evaluation report and detects regressions "
+        "against the committed baseline."
+    )
+    outputs = ("evaluation report", "evaluation runs")
+    implemented = True
+    include_in_run_remaining = False  # live LLM calls — run explicitly only
+    run_options = (
+        RunOption(value="full", label="Run All Suites"),
+        RunOption(value="understanding", label="Understanding Only"),
+        RunOption(value="retrieval", label="Retrieval Only"),
+        RunOption(value="resolution", label="Resolution Only"),
+    )
+
+    def is_complete(self, session: Session | None) -> bool:
+        return bool(_count_or_none(session, _evaluation_run_count))
+
+    def prerequisites(self, session: Session | None) -> list[Prerequisite]:
+        from ..config import get_settings
+
+        golden_root = Path(get_settings().evaluation_golden_path)
+        dataset_present = (golden_root / "dataset.json").exists()
+        kb_ready = bool(_count_or_none(session, _embedding_count))
+        return [
+            Prerequisite(
+                label="Golden dataset present",
+                met=dataset_present,
+                detail=None if dataset_present else f"Add golden cases under {golden_root}/.",
+            ),
+            Prerequisite(
+                label="Knowledge base built",
+                met=kb_ready,
+                detail=None if kb_ready else "Run Knowledge Base generation first.",
+            ),
+            _ai_prerequisite(),
+        ]
+
+    def run(
+        self,
+        session_factory: sessionmaker[Session],
+        progress: ProgressCallback,
+        option: str | None = None,
+        run_id: uuid.UUID | None = None,
+    ) -> str:
+        from alembic import command
+        from alembic.config import Config
+
+        from ..evaluation.service import EvaluationService
+        from ..llm import get_embedding_provider, get_llm_provider
+
+        reporter = ProgressReporter(
+            stage_key=self.key,
+            stage_label=self.label,
+            progress=progress,
+            message="Applying database migrations…",
+        )
+        command.upgrade(Config("alembic.ini"), "head")
+
+        suites = [option] if option is not None and option != "full" else None
+        reporter.report(message="Running the golden-dataset evaluation…")
+        service = EvaluationService(
+            session_factory,
+            get_llm_provider(),
+            get_embedding_provider(),
+            pipeline_run_id=run_id,
+        )
+        return service.run(suites=suites, progress=reporter).summary()
 
 
 class ResolutionAssistantStage(PipelineStage):

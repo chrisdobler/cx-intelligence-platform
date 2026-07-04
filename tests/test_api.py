@@ -51,7 +51,7 @@ def test_status_endpoint_shape() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert {"services", "ai", "pipeline", "metrics"} <= payload.keys()
-    assert len(payload["pipeline"]) == 5
+    assert len(payload["pipeline"]) == 6
     assert {m.get("name") for m in payload["services"]} == {
         "PostgreSQL",
         "pgvector",

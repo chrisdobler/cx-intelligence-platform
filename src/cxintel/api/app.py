@@ -31,6 +31,7 @@ from ..pipeline.orchestrator import (
     LLMObservationRecord,
     RunRecord,
     anomaly_observations,
+    latest_evaluation,
     llm_observations,
     recent_runs,
     run_remaining,
@@ -375,6 +376,96 @@ def pipeline_anomaly_observations(
         return anomaly_observations(limit=limit, sort=sort, pipeline_run_id=pipeline_run_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+class EvaluationSuiteSummary(BaseModel):
+    """Pass/fail totals of one evaluation suite."""
+
+    suite: str
+    total: int
+    passed: int
+    pass_rate: float
+
+
+class EvaluationStatus(BaseModel):
+    """Headline view of the most recent evaluation run (Control Center panel)."""
+
+    available: bool = Field(description="False when no evaluation has run yet.")
+    finished_at: datetime | None = None
+    duration_seconds: float | None = None
+    dataset_version: str | None = None
+    model: str | None = None
+    embedding_model: str | None = None
+    understanding_prompt_version: str | None = None
+    resolution_prompt_version: str | None = None
+    total_cases: int | None = None
+    passed_cases: int | None = None
+    pass_rate: float | None = None
+    suites: list[EvaluationSuiteSummary] = Field(default_factory=list)
+    baseline_available: bool = False
+    regression_count: int | None = None
+    regressions: list[str] = Field(default_factory=list)
+    retrieval_metrics: dict[str, float] | None = None
+    grounding_metrics: dict[str, float] | None = None
+    total_tokens: int | None = None
+    failed_case_ids: list[str] = Field(default_factory=list)
+
+
+@app.get("/api/evaluation/latest")
+def api_evaluation_latest() -> EvaluationStatus:
+    """The most recent evaluation run's headline numbers (Phase 7)."""
+    record = latest_evaluation()
+    if record is None:
+        return EvaluationStatus(available=False)
+    report = record.report
+    suites = [
+        EvaluationSuiteSummary(
+            suite=suite,
+            total=summary.get("total", 0),
+            passed=summary.get("passed", 0),
+            pass_rate=summary.get("pass_rate", 0.0),
+        )
+        for suite, summary in (report.get("summary") or {}).items()
+    ]
+    return EvaluationStatus(
+        available=True,
+        finished_at=record.finished_at,
+        duration_seconds=record.duration_seconds,
+        dataset_version=record.dataset_version,
+        model=record.model,
+        embedding_model=record.embedding_model,
+        understanding_prompt_version=record.understanding_prompt_version,
+        resolution_prompt_version=record.resolution_prompt_version,
+        total_cases=record.total_cases,
+        passed_cases=record.passed_cases,
+        pass_rate=record.pass_rate,
+        suites=suites,
+        baseline_available=report.get("baseline") is not None,
+        regression_count=record.regression_count,
+        regressions=[r.get("detail", "") for r in (report.get("regressions") or [])],
+        retrieval_metrics=record.retrieval_metrics,
+        grounding_metrics=record.grounding_metrics,
+        total_tokens=record.total_tokens,
+        failed_case_ids=[
+            case.get("case_id", "")
+            for case in (report.get("cases") or [])
+            if not case.get("passed", False)
+        ],
+    )
+
+
+@app.get("/api/evaluation/report", response_class=PlainTextResponse)
+def api_evaluation_report() -> str:
+    """The latest evaluation report (markdown), rendered from the stored run."""
+    from ..evaluation.report import EvaluationReport, render_markdown
+
+    record = latest_evaluation()
+    if record is None:
+        return "# Evaluation Report\n\nNo evaluation has run yet — run 'app evaluate'.\n"
+    try:
+        return render_markdown(EvaluationReport.model_validate(record.report))
+    except Exception:
+        return "# Evaluation Report\n\nStored report could not be rendered.\n"
 
 
 @app.post("/api/pipeline/{key}/run", status_code=202)

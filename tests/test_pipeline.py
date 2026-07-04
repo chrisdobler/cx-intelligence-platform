@@ -100,7 +100,7 @@ def use_stages(monkeypatch: pytest.MonkeyPatch, *stages: FakeStage) -> None:
 # --- stage_statuses ---------------------------------------------------------
 
 
-def test_real_registry_has_five_stages_in_order() -> None:
+def test_real_registry_has_six_stages_in_order() -> None:
     statuses = stage_statuses()
     assert [s.key for s in statuses] == [
         "ingest",
@@ -108,6 +108,7 @@ def test_real_registry_has_five_stages_in_order() -> None:
         "anomaly",
         "knowledge_base",
         "resolution_assistant",
+        "evaluate",
     ]
     by_key = {s.key: s for s in statuses}
     assert by_key["ingest"].implemented is True

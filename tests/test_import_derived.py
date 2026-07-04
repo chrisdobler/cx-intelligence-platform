@@ -353,8 +353,8 @@ def test_static_control_center_collapses_extra_anomalies() -> None:
     html = Path("src/cxintel/api/static/index.html").read_text(encoding="utf-8")
 
     assert "const ANOMALY_INITIAL_VISIBLE = 2;" in html
-    assert "visibleAnomalies.map(anomalyCardHTML)" in html
-    assert "ordered.slice(0, ANOMALY_INITIAL_VISIBLE)" in html
+    assert "visibleGroups.map((g) =>" in html
+    assert "groups.slice(0, ANOMALY_INITIAL_VISIBLE)" in html
     assert 'data-anomaly-more="1"' in html
     assert "Show fewer" in html
     assert "Show ${hiddenCount} more" in html

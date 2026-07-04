@@ -368,6 +368,86 @@ def _print_resolution(result: ResolutionResult) -> None:
 
 
 @app.command()
+def evaluate(
+    suite: Annotated[
+        str | None,
+        typer.Option(help="Run one suite only: understanding, retrieval, or resolution."),
+    ] = None,
+    check: Annotated[
+        bool,
+        typer.Option("--check", help="Validate the golden dataset only — no database, no LLM."),
+    ] = False,
+    promote_baseline: Annotated[
+        bool,
+        typer.Option(
+            "--promote-baseline",
+            help="Promote the current report to the committed regression baseline.",
+        ),
+    ] = False,
+    strict: Annotated[
+        bool,
+        typer.Option("--strict", help="Exit non-zero on any failed case or regression (CI)."),
+    ] = False,
+) -> None:
+    """Run the golden-dataset evaluation and produce the deterministic report."""
+    from .config import get_settings
+    from .evaluation.golden import SUITES, GoldenDatasetError, load_golden_dataset
+
+    settings = get_settings()
+
+    if promote_baseline:
+        from .evaluation.report import promote_baseline as promote
+
+        report_json = Path(settings.evaluation_report_path).with_suffix(".json")
+        baseline = Path(settings.evaluation_baseline_path)
+        try:
+            promote(report_json, baseline)
+        except FileNotFoundError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(code=1) from exc
+        typer.secho(f"Baseline promoted: {report_json} → {baseline}", fg=typer.colors.GREEN)
+        return
+
+    if check:
+        try:
+            dataset = load_golden_dataset(Path(settings.evaluation_golden_path))
+        except GoldenDatasetError as exc:
+            typer.secho(f"golden dataset invalid: {exc}", fg=typer.colors.RED)
+            raise typer.Exit(code=1) from exc
+        coverage = ", ".join(f"{name}: {count}" for name, count in dataset.coverage().items())
+        typer.secho(
+            f"Golden dataset v{dataset.version} is valid — "
+            f"{dataset.total_cases} cases ({coverage}).",
+            fg=typer.colors.GREEN,
+        )
+        return
+
+    if suite is not None and suite not in SUITES:
+        typer.secho(f"Unknown suite '{suite}' — expected one of {', '.join(SUITES)}.", fg="red")
+        raise typer.Exit(code=1)
+
+    from .pipeline.orchestrator import latest_evaluation, run_stage
+
+    try:
+        summary = run_stage("evaluate", progress=typer.echo, trigger="cli", option=suite)
+    except Exception as exc:
+        typer.secho(f"evaluation failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    latest = latest_evaluation()
+    failed_cases = (latest.total_cases - latest.passed_cases) if latest else 0
+    regressions = latest.regression_count if latest else 0
+    color = typer.colors.GREEN if not (failed_cases or regressions) else typer.colors.YELLOW
+    typer.secho(summary, fg=color)
+    if strict and (failed_cases or regressions):
+        typer.secho(
+            f"--strict: {failed_cases} failed case(s), {regressions} regression(s).",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def pipeline() -> None:
     """Run every incomplete pipeline stage in dependency order."""
     from .pipeline.orchestrator import run_remaining

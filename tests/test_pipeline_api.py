@@ -57,7 +57,7 @@ def test_status_includes_stage_cards_and_job() -> None:
     payload = client.get("/api/status").json()
     assert "job" in payload
     stages = payload["pipeline"]
-    assert len(stages) == 5
+    assert len(stages) == 6
     for stage in stages:
         assert {"key", "label", "state", "description", "implemented", "runnable"} <= (stage.keys())
         assert isinstance(stage["prerequisites"], list)

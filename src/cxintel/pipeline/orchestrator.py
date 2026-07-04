@@ -18,6 +18,7 @@ from __future__ import annotations
 import time
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -25,6 +26,7 @@ from sqlalchemy.orm import Session
 from .progress import ProgressCallback
 from .stages import (
     AnomalyStage,
+    EvaluateStage,
     IngestStage,
     KnowledgeBaseStage,
     PipelineStage,
@@ -42,6 +44,7 @@ STAGES: tuple[PipelineStage, ...] = (
     AnomalyStage(),
     KnowledgeBaseStage(),
     ResolutionAssistantStage(),
+    EvaluateStage(),
 )
 
 
@@ -426,6 +429,72 @@ def anomaly_observations(
     ]
 
 
+class EvaluationRunRecord(BaseModel):
+    """One evaluation run's headline numbers (the full report stays in JSONB)."""
+
+    id: uuid.UUID
+    pipeline_run_id: uuid.UUID | None
+    dataset_version: str
+    model: str
+    embedding_model: str
+    understanding_prompt_version: str
+    resolution_prompt_version: str
+    suites: list[str]
+    status: str
+    total_cases: int
+    passed_cases: int
+    pass_rate: float
+    regression_count: int
+    retrieval_metrics: dict[str, Any] | None
+    grounding_metrics: dict[str, Any] | None
+    total_tokens: int | None
+    report: dict[str, Any]
+    started_at: datetime
+    finished_at: datetime
+    duration_seconds: float
+    error: str | None
+
+
+def latest_evaluation() -> EvaluationRunRecord | None:
+    """The most recent evaluation run (None when none exist or the DB is down)."""
+    from ..repositories import EvaluationRunRepository
+
+    session = _open_session()
+    if session is None:
+        return None
+    try:
+        run = EvaluationRunRepository(session).latest()
+    except Exception:
+        return None
+    finally:
+        session.close()
+    if run is None:
+        return None
+    return EvaluationRunRecord(
+        id=run.id,
+        pipeline_run_id=run.pipeline_run_id,
+        dataset_version=run.dataset_version,
+        model=run.model,
+        embedding_model=run.embedding_model,
+        understanding_prompt_version=run.understanding_prompt_version,
+        resolution_prompt_version=run.resolution_prompt_version,
+        suites=run.suites,
+        status=run.status,
+        total_cases=run.total_cases,
+        passed_cases=run.passed_cases,
+        pass_rate=run.pass_rate,
+        regression_count=run.regression_count,
+        retrieval_metrics=run.retrieval_metrics,
+        grounding_metrics=run.grounding_metrics,
+        total_tokens=run.total_tokens,
+        report=run.report,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        duration_seconds=run.duration_seconds,
+        error=run.error,
+    )
+
+
 def _noop_progress(_message: object) -> None:
     return None
 
@@ -492,7 +561,7 @@ def run_remaining(progress: ProgressCallback = _noop_progress, trigger: str = "a
     stopped: str | None = None
 
     for stage in STAGES:
-        if stage.kind is not StageKind.BATCH:
+        if stage.kind is not StageKind.BATCH or not stage.include_in_run_remaining:
             continue
         session = _open_session()
         try:
