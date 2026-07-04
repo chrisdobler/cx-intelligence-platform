@@ -1,20 +1,25 @@
 """Command-line interface for the Conversation Intelligence Platform.
 
-Phase 1 wires up the full command surface. ``version``, ``db health`` and
-``serve`` are live; the pipeline-stage commands are honest stubs that will be
-implemented in later phases (they exit non-zero so scripts don't mistake a
-placeholder for a completed run). Installed as the ``app`` console script.
+Every pipeline stage is exposed here behind the same orchestration layer the
+REST API and the control center use — ``app ingest`` and the Ingestion card's
+Run button execute the same code. ``chat`` is the interactive Resolution
+Assistant (Phase 6). Installed as the ``app`` console script.
 """
 
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from pathlib import Path
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
 from . import __version__
 from .logging import configure_logging
+
+if TYPE_CHECKING:
+    from .resolution_assistant.schema import ResolutionResult
+    from .resolution_assistant.service import ResolutionAssistantService
 
 app = typer.Typer(
     help="Conversation Intelligence Platform CLI.",
@@ -229,9 +234,107 @@ def search(
 
 
 @app.command()
-def chat() -> None:
-    """Interactive Resolution Assistant (Phase 6)."""
-    _not_implemented("resolution_assistant")
+def chat(
+    text: Annotated[
+        str | None,
+        typer.Argument(help="New ticket text (omit for interactive mode)."),
+    ] = None,
+    conversation: str | None = typer.Option(
+        None,
+        "--conversation",
+        "-c",
+        help="Existing conversation id (UUID or external id like TICKET-0042).",
+    ),
+    issue: int | None = typer.Option(
+        None, help="Issue index when the conversation has several (see the printed list)."
+    ),
+    product: str | None = typer.Option(None, help="Product hint for free-text tickets."),
+    limit: int = typer.Option(5, help="Maximum knowledge documents to retrieve."),
+) -> None:
+    """Resolution Assistant (Phase 6) — grounded recommendations from historical evidence."""
+    from .db import get_session_factory
+    from .llm import get_embedding_provider, get_llm_provider
+    from .resolution_assistant.service import ResolutionAssistantService
+
+    if text is not None and conversation is not None:
+        typer.secho("TEXT and --conversation are mutually exclusive.", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    try:
+        service = ResolutionAssistantService(
+            get_session_factory(), get_llm_provider(), get_embedding_provider()
+        )
+    except Exception as exc:
+        typer.secho(f"resolution assistant unavailable: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    if text is None and conversation is None:
+        _chat_repl(service, product=product, limit=limit)
+        return
+
+    try:
+        if conversation is not None:
+            result = service.resolve_conversation(conversation, issue_index=issue, limit=limit)
+        else:
+            assert text is not None
+            result = service.resolve_ticket(text, product=product, issue_index=issue, limit=limit)
+    except Exception as exc:
+        typer.secho(f"resolution failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+    _print_resolution(result)
+
+
+def _chat_repl(service: ResolutionAssistantService, *, product: str | None, limit: int) -> None:
+    """Interactive loop: describe a ticket, get a recommendation, repeat."""
+    typer.echo("Resolution Assistant — describe a ticket (empty input to exit).")
+    while True:
+        try:
+            text = typer.prompt("ticket", default="", show_default=False).strip()
+        except (typer.Abort, EOFError):  # Ctrl-C / Ctrl-D
+            return
+        if not text:
+            return
+        try:
+            result = service.resolve_ticket(text, product=product, limit=limit)
+        except Exception as exc:
+            typer.secho(f"resolution failed: {exc}", fg=typer.colors.RED)
+            continue
+        _print_resolution(result)
+
+
+def _print_resolution(result: ResolutionResult) -> None:
+    response = result.response
+
+    if len(result.issues) > 1:
+        typer.echo("Issues in this conversation:")
+        for option in result.issues:
+            marker = "→" if option.index == result.selected_issue_index else " "
+            typer.echo(
+                f" {marker} [{option.index}] {option.canonical_name} "
+                f"({option.product}, {option.resolution_status})"
+            )
+        typer.echo("Use --issue N to pick another.\n")
+
+    if response.grounded:
+        typer.secho(
+            f"GROUNDED — evidence: {response.evidence_strength}", fg=typer.colors.GREEN, bold=True
+        )
+    else:
+        typer.secho("UNGROUNDED — no sufficient historical evidence", fg="yellow", bold=True)
+    typer.secho(response.recommendation, bold=True)
+    typer.echo(response.reasoning)
+    for number, action in enumerate(response.recommended_actions, start=1):
+        typer.echo(f"  {number}. {action}")
+    if response.citations:
+        typer.echo("Evidence:")
+        by_id = {doc.doc_id: doc for doc in result.bundle.documents}
+        for citation in response.citations:
+            doc = by_id[citation]
+            typer.echo(
+                f"  {citation} → {doc.document.issue} "
+                f"(conversation {doc.conversation_id}, distance {doc.distance:.3f})"
+            )
+    typer.echo("")
 
 
 @app.command()

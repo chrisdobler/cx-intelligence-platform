@@ -212,6 +212,54 @@
     @media (max-width: 720px) { .actions { grid-template-columns: 1fr 1fr; } }
     .action {
       display: flex; flex-direction: column; justify-content: center; gap: 4px;
+    /* Resolution Assistant */
+    .res-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+    .res-tab {
+      font: inherit; font-weight: 600; padding: 6px 12px; border: 1px solid var(--border);
+      border-radius: 999px; background: var(--card); color: var(--muted); cursor: pointer;
+    }
+    .res-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .res-form { display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
+    .res-form textarea, .res-form input, .res-form select {
+      font: inherit; padding: 8px 10px; border: 1px solid var(--border);
+      border-radius: 8px; min-width: 0; width: 100%;
+    }
+    .res-form textarea { min-height: 72px; resize: vertical; }
+    .res-form textarea:focus, .res-form input:focus { outline: none; border-color: var(--accent); }
+    .res-form .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .res-form .row input { flex: 1; }
+    .res-form label { font-size: 13px; color: var(--muted); font-weight: 600; }
+    .res-issues { list-style: none; margin: 0; padding: 0; font-size: 13.5px; }
+    .res-issues li { padding: 3px 0; }
+    .res-issues label { font-weight: 500; color: var(--text); cursor: pointer; }
+    .res-issues .status { color: var(--muted); font-size: 12.5px; }
+    .res-msg { font-size: 13px; margin: 4px 0 0; }
+    .res-msg.err { color: var(--red); }
+    .res-msg.muted { color: var(--muted); }
+    .res-result { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .res-badge {
+      display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.04em; padding: 3px 10px; border-radius: 999px;
+    }
+    .res-badge.grounded { background: #d1fadf; color: #027a48; }
+    .res-badge.ungrounded { background: #fef0c7; color: #b54708; }
+    .res-recommendation { font-weight: 700; font-size: 16px; margin: 10px 0 4px; }
+    .res-reasoning { margin: 0 0 10px; color: var(--muted); font-size: 13.5px; }
+    .res-actions-list { margin: 0 0 12px; padding-left: 22px; font-size: 13.5px; }
+    .res-actions-list li { margin: 3px 0; }
+    .res-evidence { display: flex; flex-direction: column; gap: 8px; }
+    .res-doc {
+      border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+      font-size: 13px;
+    }
+    .res-doc.cited { border-color: var(--green); background: #f6fef9; }
+    .res-doc .doc-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .res-doc .doc-id { font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .res-doc .doc-issue { font-weight: 600; }
+    .res-doc .doc-meta { color: var(--muted); font-size: 12px; margin-left: auto; }
+    .res-doc .doc-resolution { margin: 4px 0 0; color: var(--muted); }
+    .res-retrieval { margin-top: 10px; color: var(--muted); font-size: 12.5px; }
+
       background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
       padding: 18px; min-height: 84px; text-decoration: none; color: var(--text);
       cursor: pointer; transition: border-color .12s, box-shadow .12s; text-align: left;
@@ -317,6 +365,38 @@
 
     <footer id="footer">Conversation Intelligence Platform</footer>
   </div>
+
+    <section id="resolution">
+      <h2>Resolution Assistant</h2>
+      <div class="card">
+        <div class="res-tabs" role="tablist">
+          <button class="res-tab active" id="res-tab-ticket" type="button">New ticket</button>
+          <button class="res-tab" id="res-tab-conversation" type="button">Existing conversation</button>
+        </div>
+        <form class="res-form" id="res-form">
+          <div id="res-ticket-inputs">
+            <textarea id="res-text" placeholder="Describe the customer's problem, e.g. “water is pooling under the Pod 4 hub every night”"
+              aria-label="Ticket text"></textarea>
+            <div class="row" style="margin-top:8px;">
+              <input id="res-product" placeholder="Product (optional), e.g. Pod 4" aria-label="Product" />
+            </div>
+          </div>
+          <div id="res-conversation-inputs" style="display:none;">
+            <div class="row">
+              <input id="res-conversation-id" placeholder="Conversation id, e.g. conv_72912dd7 or a UUID"
+                aria-label="Conversation id" />
+              <button class="btn" type="button" id="res-load-issues">Load issues</button>
+            </div>
+            <ul class="res-issues" id="res-issues"></ul>
+          </div>
+          <div class="row">
+            <button class="btn primary" type="submit" id="res-submit">Get Recommendation</button>
+            <span class="res-msg" id="res-msg"></span>
+          </div>
+        </form>
+        <div class="res-result" id="res-result" style="display:none;" aria-live="polite"></div>
+      </div>
+    </section>
 
   <script>
     const adminerUrl = `${location.protocol}//${location.hostname}:8080`;
@@ -825,3 +905,170 @@ Imported conversations and messages will NOT be modified.`;
   </script>
 </body>
 </html>
+    /* --- Resolution Assistant --- */
+    let resMode = "ticket";
+
+    function setResMode(mode) {
+      resMode = mode;
+      document.getElementById("res-tab-ticket").className =
+        `res-tab ${mode === "ticket" ? "active" : ""}`;
+      document.getElementById("res-tab-conversation").className =
+        `res-tab ${mode === "conversation" ? "active" : ""}`;
+      document.getElementById("res-ticket-inputs").style.display =
+        mode === "ticket" ? "" : "none";
+      document.getElementById("res-conversation-inputs").style.display =
+        mode === "conversation" ? "" : "none";
+      document.getElementById("res-msg").textContent = "";
+    }
+    document.getElementById("res-tab-ticket").addEventListener("click", () => setResMode("ticket"));
+    document.getElementById("res-tab-conversation").addEventListener("click", () => setResMode("conversation"));
+
+    function renderResIssues(options, selectedIndex) {
+      const el = document.getElementById("res-issues");
+      if (!options || options.length < 2) { el.innerHTML = ""; return; }
+      el.innerHTML = options.map((o) => `<li>
+        <label><input type="radio" name="res-issue" value="${o.index}"
+          ${o.index === selectedIndex ? "checked" : ""} />
+          ${esc(o.canonical_name)} <span class="status">(${esc(o.product)}, ${esc(o.resolution_status)})</span></label>
+      </li>`).join("");
+      for (const radio of el.querySelectorAll("input[name=res-issue]")) {
+        radio.addEventListener("change", () => resSubmit(Number(radio.value)));
+      }
+    }
+
+    async function resLoadIssues() {
+      const id = document.getElementById("res-conversation-id").value.trim();
+      const msg = document.getElementById("res-msg");
+      if (!id) {
+        msg.className = "res-msg err";
+        msg.textContent = "Enter a conversation id first.";
+        return;
+      }
+      msg.className = "res-msg muted";
+      msg.textContent = "Loading issues…";
+      try {
+        const res = await fetch(`/api/resolution/issues?conversation_id=${encodeURIComponent(id)}`);
+        const data = await res.json();
+        if (!res.ok) {
+          msg.className = "res-msg err";
+          msg.textContent = typeof data.detail === "string" ? data.detail : `Could not load issues (${res.status}).`;
+          return;
+        }
+        msg.className = "res-msg muted";
+        msg.textContent = data.length === 1
+          ? `One issue: ${data[0].canonical_name}.`
+          : `${data.length} issues — the first unresolved one is used unless you pick another.`;
+        renderResIssues(data, null);
+      } catch (e) {
+        msg.className = "res-msg err";
+        msg.textContent = "Could not reach the API.";
+      }
+    }
+    document.getElementById("res-load-issues").addEventListener("click", resLoadIssues);
+
+    function selectedResIssue() {
+      const checked = document.querySelector("#res-issues input[name=res-issue]:checked");
+      return checked ? Number(checked.value) : null;
+    }
+
+    async function resSubmit(issueIndex) {
+      const msg = document.getElementById("res-msg");
+      const submit = document.getElementById("res-submit");
+      const result = document.getElementById("res-result");
+      const body = { issue_index: issueIndex };
+      if (resMode === "ticket") {
+        const text = document.getElementById("res-text").value.trim();
+        if (!text) {
+          msg.className = "res-msg err";
+          msg.textContent = "Describe the ticket first.";
+          return;
+        }
+        body.text = text;
+        body.product = document.getElementById("res-product").value.trim() || null;
+      } else {
+        const id = document.getElementById("res-conversation-id").value.trim();
+        if (!id) {
+          msg.className = "res-msg err";
+          msg.textContent = "Enter a conversation id first.";
+          return;
+        }
+        body.conversation_id = id;
+        if (issueIndex === null) body.issue_index = selectedResIssue();
+      }
+      submit.disabled = true;
+      msg.className = "res-msg muted";
+      msg.textContent = "Retrieving evidence and generating a grounded recommendation…";
+      try {
+        const res = await fetch("/api/resolution", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          msg.className = "res-msg err";
+          msg.textContent = typeof data.detail === "string" ? data.detail : `Request failed (${res.status}).`;
+          result.style.display = "none";
+          return;
+        }
+        msg.textContent = "";
+        renderResResult(data);
+      } catch (e) {
+        msg.className = "res-msg err";
+        msg.textContent = "Could not reach the API.";
+      } finally {
+        submit.disabled = false;
+      }
+    }
+    document.getElementById("res-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      resSubmit(null);
+    });
+
+    function renderResResult(result) {
+      const el = document.getElementById("res-result");
+      const r = result.response;
+      const cited = new Set(r.citations);
+      const badge = r.grounded
+        ? `<span class="res-badge grounded">Grounded — ${esc(r.evidence_strength)} evidence</span>`
+        : `<span class="res-badge ungrounded">Ungrounded — no sufficient evidence</span>`;
+      const issuePicker = result.issues.length > 1 ? `
+        <p class="res-msg muted" style="margin:10px 0 4px;">This conversation has ${result.issues.length} issues — pick one to resolve:</p>
+        <ul class="res-issues" id="res-result-issues">${result.issues.map((o) => `<li>
+          <label><input type="radio" name="res-result-issue" value="${o.index}"
+            ${o.index === result.selected_issue_index ? "checked" : ""} />
+            ${esc(o.canonical_name)} <span class="status">(${esc(o.product)}, ${esc(o.resolution_status)})</span></label>
+        </li>`).join("")}</ul>` : "";
+      const actions = r.recommended_actions.length
+        ? `<ol class="res-actions-list">${r.recommended_actions.map((a) => `<li>${esc(a)}</li>`).join("")}</ol>`
+        : "";
+      const docs = result.bundle.documents.map((d) => `
+        <div class="res-doc ${cited.has(d.doc_id) ? "cited" : ""}">
+          <div class="doc-head">
+            <span class="doc-id">${esc(d.doc_id)}</span>
+            <span class="doc-issue">${esc(d.document.issue)}</span>
+            ${cited.has(d.doc_id) ? `<span class="chip">cited</span>` : ""}
+            <span class="doc-meta">${esc(d.document.product)} · distance ${d.distance.toFixed(3)}</span>
+          </div>
+          <p class="doc-resolution">${esc(d.document.resolution_summary)}</p>
+        </div>`).join("");
+      const meta = result.bundle.retrieval;
+      el.style.display = "";
+      el.innerHTML = `
+        ${badge}
+        ${issuePicker}
+        <p class="res-recommendation">${esc(r.recommendation)}</p>
+        <p class="res-reasoning">${esc(r.reasoning)}</p>
+        ${actions}
+        ${result.bundle.documents.length ? `<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:14px 0 8px;font-weight:600;">Retrieved evidence</h3>
+        <div class="res-evidence">${docs}</div>` : ""}
+        <p class="res-retrieval">Retrieved ${meta.result_count} of up to ${meta.limit} documents${meta.product_filter ? ` · product filter: ${esc(meta.product_filter)}${meta.filter_relaxed ? " (relaxed — no exact match)" : ""}` : ""}${result.llm_called ? "" : " · answered deterministically without an LLM call"}</p>`;
+      const picker = el.querySelector("#res-result-issues");
+      if (picker) {
+        for (const radio of picker.querySelectorAll("input[name=res-result-issue]")) {
+          radio.addEventListener("change", () => resSubmit(Number(radio.value)));
+        }
+      }
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+

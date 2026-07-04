@@ -73,7 +73,10 @@ def test_prompt_version_bumped_for_canonicalization_guidance() -> None:
 def test_prompt_treats_issue_extraction_as_classification() -> None:
     prompt = _prompt()
 
-    assert "Treat issue extraction as operational classification rather than issue naming." in prompt
+    assert (
+        "Treat issue extraction as operational classification rather than issue naming."
+        in prompt
+    )
     assert "classify customer problems into fewer, broader, stable" in prompt
     assert "reporting categories" in prompt
     assert "while preserving every distinct operational" in prompt

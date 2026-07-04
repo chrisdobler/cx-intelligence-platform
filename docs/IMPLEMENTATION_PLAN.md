@@ -167,6 +167,22 @@ Relevant historical conversations can be retrieved from semantic search.
 
 # Phase 6 — Resolution Assistant
 
+> **Status: delivered.** The deterministic context builder renders a
+> retrieval query from one selected issue (symmetric with `knowledge_text`),
+> calls the existing Phase 5 retrieval unchanged, and packages the hits into a
+> `ContextBundle` with stable citation ids (`KB-1`, `KB-2`, …). Prompt #2
+> performs decision support over that bundle only, returning a validated
+> `ResolutionResponse` (recommendation, reasoning, actions, grounded flag,
+> evidence strength, citations). Grounding is enforced in code: zero
+> retrieved documents short-circuits to a deterministic ungrounded response
+> with no LLM call, unknown citations are dropped, and a "grounded" response
+> citing nothing is downgraded. Two input modes — an analyzed conversation
+> (per-issue selection, defaulting to the first unresolved issue) or a
+> free-text ticket structured via Prompt #1 and never persisted. Integrated
+> with `app chat` (one-shot and interactive), `POST /api/resolution` +
+> `GET /api/resolution/issues`, and the control center's Resolution Assistant
+> panel (the interactive stage card's **Open** action).
+
 ## Objectives
 
 Implement:

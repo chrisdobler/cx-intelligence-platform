@@ -38,10 +38,15 @@ def test_get_settings_is_cached() -> None:
     assert get_settings() is get_settings()
 
 
-def test_stub_command_exits_nonzero() -> None:
-    # chat is the Phase 6 stub; it exits 1 without touching the DB or any
-    # API. (understand/build-kb are live and must not be invoked here — they
-    # would run real AI calls against the dev database.)
-    result = runner.invoke(app, ["chat"])
+def test_chat_without_ai_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
+    # chat needs a configured AI provider; without one it exits 1 before
+    # touching the DB or any API. (understand/build-kb are live and must not
+    # be invoked here — they would run real AI calls against the dev database.)
+    monkeypatch.setenv("GOOGLE_API_KEY", "")
+    get_settings.cache_clear()
+    try:
+        result = runner.invoke(app, ["chat", "my pod is leaking"])
+    finally:
+        get_settings.cache_clear()
     assert result.exit_code == 1
-    assert "Phase 6" in result.output
+    assert "resolution assistant unavailable" in result.output

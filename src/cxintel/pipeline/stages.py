@@ -417,7 +417,8 @@ class ResolutionAssistantStage(PipelineStage):
     )
     outputs = ("resolution suggestions",)
     kind = StageKind.INTERACTIVE
-    planned_phase = "Phase 6"
+    implemented = True
+    open_url = "/#resolution"
 
     def is_complete(self, session: Session | None) -> bool:
         # An interactive stage is "complete" when it is ready to use.

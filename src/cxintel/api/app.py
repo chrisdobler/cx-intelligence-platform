@@ -3,8 +3,8 @@
 Serves the control-center landing page at ``/`` and a small set of typed JSON
 endpoints that back it: ``/api/status`` (service + pipeline status) and
 ``/api/config`` (non-secret configuration). ``/health`` remains the machine
-probe and Swagger stays at ``/docs``. The Resolution Assistant endpoints
-(Phase 6) will be added to this module.
+probe and Swagger stays at ``/docs``. The Resolution Assistant (Phase 6) is
+exposed via ``POST /api/resolution`` and ``GET /api/resolution/issues``.
 """
 
 from __future__ import annotations
@@ -12,12 +12,12 @@ from __future__ import annotations
 import os
 import uuid
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import __version__
 from ..config import get_settings, set_env_key
@@ -36,8 +36,12 @@ from ..pipeline.orchestrator import (
 from ..pipeline.reset import reset_derived_data
 from ..pipeline.stages import StageKind
 from .status import PlatformStatus, build_status
+from ..resolution_assistant.schema import IssueOption, ResolutionResult
 
 _STATIC_DIR = Path(__file__).parent / "static"
+if TYPE_CHECKING:
+    from ..resolution_assistant.service import ResolutionAssistantService
+
 
 app = FastAPI(title="Conversation Intelligence Platform", version=__version__)
 
@@ -269,6 +273,84 @@ def pipeline_llm_observations(
     """Slowest per-conversation LLM timing observations."""
     try:
         return llm_observations(limit=limit, sort=sort, pipeline_run_id=pipeline_run_id)
+class ResolutionRequest(BaseModel):
+    """Body for POST /api/resolution — exactly one of conversation_id or text."""
+
+    conversation_id: str | None = None  # UUID or external id (e.g. TICKET-0042)
+    text: str | None = None  # free-text new ticket
+    product: str | None = None  # ticket mode only: product hint
+    issue_index: int | None = None
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+def _resolution_service() -> ResolutionAssistantService:
+    from ..db import get_session_factory
+    from ..llm import LLMExtractionError, get_embedding_provider, get_llm_provider
+    from ..resolution_assistant.service import ResolutionAssistantService
+
+    try:
+        return ResolutionAssistantService(
+            get_session_factory(), get_llm_provider(), get_embedding_provider()
+        )
+    except LLMExtractionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/resolution")
+def api_resolution(body: ResolutionRequest) -> ResolutionResult:
+    """Grounded resolution recommendation for one issue (Phase 6).
+
+    Accepts either an already-analyzed conversation (``conversation_id``) or a
+    free-text new ticket (``text``, structured via Prompt #1 and never
+    persisted). A zero-hit ungrounded response is a successful outcome (200).
+    """
+    from ..llm import LLMExtractionError
+    from ..resolution_assistant.service import (
+        ConversationNotFoundError,
+        NoIssuesFoundError,
+        UnknownIssueIndexError,
+    )
+
+    if (body.conversation_id is None) == (body.text is None):
+        raise HTTPException(
+            status_code=422, detail="Provide exactly one of 'conversation_id' or 'text'."
+        )
+    service = _resolution_service()
+    try:
+        if body.conversation_id is not None:
+            return service.resolve_conversation(
+                body.conversation_id, issue_index=body.issue_index, limit=body.limit
+            )
+        assert body.text is not None
+        return service.resolve_ticket(
+            body.text, product=body.product, issue_index=body.issue_index, limit=body.limit
+        )
+    except ConversationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (NoIssuesFoundError, UnknownIssueIndexError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LLMExtractionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
+
+
+@app.get("/api/resolution/issues")
+def api_resolution_issues(
+    conversation_id: str = Query(min_length=1, description="UUID or external id."),
+) -> list[IssueOption]:
+    """The selectable issues of one analyzed conversation (no retrieval, no LLM)."""
+    from ..resolution_assistant.service import ConversationNotFoundError
+
+    service = _resolution_service()
+    try:
+        return service.conversation_issues(conversation_id)
+    except ConversationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
+
+
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

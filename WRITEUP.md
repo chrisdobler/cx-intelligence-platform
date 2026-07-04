@@ -63,6 +63,25 @@ When no sufficiently similar historical resolutions exist, the assistant
 explicitly reports that no grounded recommendation can be made rather than
 inventing troubleshooting guidance.
 
+### Grounding Enforced in Code
+
+Grounding is a platform guarantee, not a prompt aspiration. The context
+builder assigns each retrieved KnowledgeDocument a stable citation id
+(`KB-1`, `KB-2`, … in retrieval rank order), and every LLM response passes a
+deterministic validation step: citations that do not reference a supplied
+document are dropped, a response claiming to be grounded while citing no
+retrieved document is downgraded to ungrounded, and an ungrounded response
+cannot carry recommended actions. When retrieval returns nothing at all, the
+platform answers deterministically without invoking the LLM — "no evidence"
+costs no tokens and cannot hallucinate.
+
+The retrieval query itself is rendered deterministically from the selected
+issue using the same field labels as the embedded `knowledge_text`, so query
+and documents occupy the same embedding space. The current issue is taken
+verbatim from the Structured Conversation Object — the assistant never
+reinterprets conversations (a new free-text ticket is structured once by the
+existing Prompt #1 and is not persisted).
+
 ## 5. Key Engineering Decisions
 - Reference DESIGN_DECISIONS.md
 - Summarize only the most important decisions.
